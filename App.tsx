@@ -1,10 +1,12 @@
-import React from 'react';
+import React, {useEffect} from 'react';
 import WebView, {WebViewMessageEvent} from 'react-native-webview';
 import SafeAreaProvider from './src/components/SafeAreaProvider';
 import {Provider} from 'react-redux';
 import store from './src/context/redux/store';
 import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
+import {SimpleLoader} from './src/components/Loader';
+import {BackHandler, Platform} from 'react-native';
 
 export interface onMessagePayload {
   type?: string;
@@ -20,6 +22,7 @@ const ProviderApp = () => {
 };
 
 const App = () => {
+  const webRef = React.useRef();
   const dispatch = useAppDispatch();
   const onMessage = (payload: WebViewMessageEvent) => {
     const data: onMessagePayload = JSON.parse(payload.nativeEvent.data);
@@ -44,10 +47,34 @@ const App = () => {
     window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
   })();`;
 
+  const onAndroidBackPress = () => {
+    if (webRef?.current) {
+      webRef?.current?.goBack();
+      return true; // prevent default behavior (exit app)
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      BackHandler.addEventListener('hardwareBackPress', onAndroidBackPress);
+      return () => {
+        BackHandler.removeEventListener(
+          'hardwareBackPress',
+          onAndroidBackPress,
+        );
+      };
+    }
+  }, []);
+  const frontButtonHandler = () => {
+    if (webRef.current) webRef?.current?.goForward();
+  };
+
   return (
     <SafeAreaProvider>
       <WebView
-        source={{uri: 'http://192.168.1.103:3000'}}
+        ref={webRef}
+        source={{uri: 'https://mynafe.vercel.app/login'}}
         allowsBackForwardNavigationGestures={true}
         injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
         javaScriptEnabled={true}
@@ -55,6 +82,13 @@ const App = () => {
         cacheEnabled
         originWhitelist={['https://*', 'http://*', 'data:*']}
         allowsFullscreenVideo={true}
+        onError={error => Alert.alert('Something went wrong', error.type)}
+        scalesPageToFit={true}
+        startInLoadingState={true}
+        renderLoading={() => <SimpleLoader />}
+        onTouchEnd={e => {
+          if (e.nativeEvent?.pageX > 30) webRef?.current?.goForward();
+        }}
       />
     </SafeAreaProvider>
   );
