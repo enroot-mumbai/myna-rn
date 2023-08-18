@@ -7,6 +7,8 @@ import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
 import {SimpleLoader} from './src/components/Loader';
 import {BackHandler, Platform} from 'react-native';
+import messaging from '@react-native-firebase/messaging';
+
 
 export interface onMessagePayload {
   type?: string;
@@ -66,6 +68,27 @@ const App = () => {
       };
     }
   }, []);
+
+  useEffect(() => {
+    // Request permission to receive notifications (optional)
+    messaging().requestPermission();
+
+    // Get the FCM token
+    messaging()
+      .getToken()
+      .then((fcmToken) => {
+        if (fcmToken) {
+          console.log('FCM Token:', fcmToken);
+          // You can send this token to your server for later use
+        } else {
+          console.log('No FCM token available');
+        }
+      })
+      .catch((error) => {
+        console.log('Error getting FCM token:', error);
+      });
+  }, []);
+  
   const frontButtonHandler = () => {
     if (webRef.current) webRef?.current?.goForward();
   };

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "707622323920",
+    "project_id": "myna-development",
+    "storage_bucket": "myna-development.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:707622323920:android:3dec3d79b8ab59db2b00d5",
+        "android_client_info": {
+          "package_name": "com.mynarnapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "707622323920-1rl4r1tq3d3ke62di5ga0jqtc5ch24t4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDJIsBWO17oCLjfVUTOIt0ZQLJ85dvjT4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "707622323920-1rl4r1tq3d3ke62di5ga0jqtc5ch24t4.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
