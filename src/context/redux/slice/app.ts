@@ -4,6 +4,7 @@ import type {PayloadAction} from '@reduxjs/toolkit';
 // Define the initial state using that type
 const initialState = {
   token: '',
+  fcmToken: '',
 };
 
 export const appSlice = createSlice({
@@ -19,9 +20,13 @@ export const appSlice = createSlice({
       state.token = undefined;
       return state;
     },
+    saveFCMToken: (state, action: PayloadAction) => {
+      state.fcmToken = action.payload;
+      return state;
+    },
   },
 });
 
-export const {saveToken, removeToken} = appSlice.actions;
+export const {saveToken, removeToken, saveFCMToken} = appSlice.actions;
 
 export default appSlice.reducer;
