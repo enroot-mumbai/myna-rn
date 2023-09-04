@@ -1,19 +1,19 @@
-import React, {useEffect, useState} from 'react';
-import WebView, {WebViewMessageEvent} from 'react-native-webview';
-import SafeAreaProvider from './src/components/SafeAreaProvider';
-import {Provider, useSelector} from 'react-redux';
-import store from './src/context/redux/store';
-import {useAppDispatch, useAppSelector} from './src/context/redux/hooks';
-import {
-  removeToken,
-  saveToken,
-  saveFCMToken,
-} from './src/context/redux/slice/app';
-import {SimpleLoader} from './src/components/Loader';
-import {Alert, BackHandler, Platform} from 'react-native';
 import messaging from '@react-native-firebase/messaging';
 import axios from 'axios';
+import React, { useEffect, useState } from 'react';
+import { Alert, BackHandler, Platform } from 'react-native';
+import Config from 'react-native-config';
 import PushNotification from 'react-native-push-notification';
+import WebView, { WebViewMessageEvent } from 'react-native-webview';
+import { Provider } from 'react-redux';
+import { SimpleLoader } from './src/components/Loader';
+import SafeAreaProvider from './src/components/SafeAreaProvider';
+import { useAppDispatch } from './src/context/redux/hooks';
+import {
+  removeToken,
+  saveToken
+} from './src/context/redux/slice/app';
+import store from './src/context/redux/store';
 
 export interface onMessagePayload {
   type?: string;
@@ -31,8 +31,6 @@ const ProviderApp = () => {
 const App = () => {
   const webRef = React.useRef();
   const dispatch = useAppDispatch();
-  const fcmToken = useAppSelector(state => state.fcmToken);
-  const appToken = useAppSelector(state => state.token);
   const [tokenState, setTokenState] = useState('');
   const [fcmTokenState, setFCMTokenState] = useState('');
 
@@ -42,16 +40,21 @@ const App = () => {
       data?.payload?.token !== '' &&
       data?.payload?.token !== null &&
       data?.payload?.token !== undefined;
-    console.log(data);
+
     switch (data?.type) {
       case 'LOG_IN':
         if (!isTokenAvailable) {
+          dispatch(removeToken());
+          setTokenState('');
+          setFCMTokenState('');
           return;
         }
         console.log('data?.payload?.token', data?.payload?.token);
         setTokenState(data?.payload?.token);
         return dispatch(saveToken(data?.payload?.token));
       case 'LOG_OUT':
+        setTokenState('');
+        setFCMTokenState('');
         return dispatch(removeToken());
     }
   };
@@ -69,6 +72,67 @@ const App = () => {
     return false;
   };
 
+  // fetches the user profile to get the FCM token if not present then creates a new FCM token
+  const getUserProfile = async (): Promise<void> => {
+    try {
+      console.log('tokenState', tokenState);
+      const res = await axios.get(`${Config.API_URL}/user`, {
+        headers: {
+          Authorization: tokenState,
+        },
+      });
+      if (res?.data?.deviceToken) {
+        console.log(res?.data?.deviceToken)
+        setFCMTokenState(res?.data?.deviceToken);
+      } else {
+        createFCMToken();
+      }
+    } catch (error) {
+      setFCMTokenState('');
+    }
+  };
+
+  // updates the FCM token in the user profile
+  const updateUserProfile = async (token: string): Promise<void> => {
+    try {
+      const res = await axios.put(
+        `${Config.API_URL}/user/update`,
+        {deviceToken: token},
+        {
+          headers: {
+            Authorization: tokenState,
+          },
+        },
+      );
+      setFCMTokenState(token || '');
+    } catch (error) {
+      setFCMTokenState('');
+    }
+  };
+
+  //  creates an FCM token used to send notification to the app and stores it in the user profile
+  const createFCMToken = () => {
+    // Request permission to receive notifications (optional)
+    messaging().requestPermission();
+
+    // Get the FCM token
+    messaging()
+      .getToken()
+      .then(async token => {
+        if (token) {
+          console.log('FCM Token:', token);
+          updateUserProfile(token);
+
+          // You can send this token to your server for later use
+        } else {
+          console.log('No FCM token available');
+        }
+      })
+      .catch(error => {
+        console.log('Error getting FCM token:', error);
+      });
+  };
+
   useEffect(() => {
     if (Platform.OS === 'android') {
       BackHandler.addEventListener('hardwareBackPress', onAndroidBackPress);
@@ -82,32 +146,6 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    console.log('fcmToken', fcmToken);
-    if (!fcmToken) {
-      // Request permission to receive notifications (optional)
-      messaging().requestPermission();
-
-      // Get the FCM token
-      messaging()
-        .getToken()
-        .then(async token => {
-          if (token) {
-            console.log('FCM Token:', token);
-            dispatch(saveFCMToken(token));
-            setFCMTokenState(token);
-
-            // You can send this token to your server for later use
-          } else {
-            console.log('No FCM token available');
-          }
-        })
-        .catch(error => {
-          console.log('Error getting FCM token:', error);
-        });
-    }
-  }, [fcmToken]);
-
-  useEffect(() => {
     // Listen for foreground notifications
     const unsubscribeForeground = messaging().onMessage(async remoteMessage => {
       console.log('A new foreground notification arrived:', remoteMessage);
@@ -116,19 +154,17 @@ const App = () => {
     });
 
     // Listen for notifications when the app is in the background or terminated
-    const unsubscribeBackground = messaging().setBackgroundMessageHandler(
-      async remoteMessage => {
-        console.log('A new background notification arrived:', remoteMessage);
-        // Create a local notification
-        PushNotification.localNotification({
-          id: Date.now().toString(),
-          title: remoteMessage.notification.title,
-          message: remoteMessage.notification.body,
-        });
+    messaging().setBackgroundMessageHandler(async remoteMessage => {
+      console.log('A new background notification arrived:', remoteMessage);
+      // Create a local notification
+      PushNotification.localNotification({
+        id: Date.now().toString(),
+        title: remoteMessage.notification.title,
+        message: remoteMessage.notification.body,
+      });
 
-        // Handle the background notification and trigger custom logic
-      },
-    );
+      // Handle the background notification and trigger custom logic
+    });
 
     // Clean up the subscriptions when the component is unmounted
     return () => {
@@ -137,47 +173,16 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    console.log('===============');
-    console.log('tokenState', tokenState);
-    console.log('fcmTokenState', fcmTokenState);
-    console.log('===============');
-    if (tokenState && fcmTokenState) {
-      updateUserProfile(fcmTokenState);
+    if (tokenState) {
+      getUserProfile();
     }
-  }, [tokenState, fcmTokenState]);
-
-  const updateUserProfile = async (token): Promise<{}> => {
-    try {
-      console.log('tokenState', tokenState);
-      console.log('payload', {deviceToken: token});
-      const res = await axios.put(
-        `http://43.204.9.189:3001/user/update`,
-        {deviceToken: token},
-        {
-          headers: {
-            Authorization: tokenState,
-          },
-        },
-      );
-      console.log('\n\nres', res);
-    } catch (error) {
-      console.log('\n\nerror', error.response);
-      return {
-        isError: true,
-        data: error.response && error.response.data,
-      };
-    }
-  };
-
-  const frontButtonHandler = () => {
-    if (webRef.current) webRef?.current?.goForward();
-  };
+  }, [tokenState]);
 
   return (
     <SafeAreaProvider>
       <WebView
         ref={webRef}
-        source={{uri: 'http://192.168.1.9:3000/login'}}
+        source={{uri: `${Config.WEB_URL}/login`}}
         allowsBackForwardNavigationGestures={true}
         injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
         javaScriptEnabled={true}

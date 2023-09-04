@@ -3,8 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
-    "ios": "react-native run-ios",
+    "android": "ENVFILE=.env.staging react-native run-android",
+    "ios": "ENVFILE=.env.staging react-native run-ios",
     "start": "react-native start",
     "test": "jest",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
@@ -16,6 +16,7 @@
     "axios": "^1.4.0",
     "react": "18.1.0",
     "react-native": "0.70.6",
+    "react-native-config": "^1.5.1",
     "react-native-push-notification": "^8.1.1",
     "react-native-webview": "^11.26.1",
     "react-redux": "^8.0.5"
@@ -28,6 +29,7 @@
     "@types/jest": "^26.0.23",
     "@types/react": "^18.0.21",
     "@types/react-native": "^0.70.6",
+    "@types/react-native-push-notification": "^8.1.1",
     "@types/react-test-renderer": "^18.0.0",
     "@typescript-eslint/eslint-plugin": "^5.37.0",
     "@typescript-eslint/parser": "^5.37.0",
