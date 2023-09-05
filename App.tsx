@@ -3,16 +3,13 @@ import axios from 'axios';
 import React, { useEffect, useState } from 'react';
 import { Alert, BackHandler, Platform } from 'react-native';
 import Config from 'react-native-config';
-import PushNotification from 'react-native-push-notification';
+import PushNotification, { Importance } from 'react-native-push-notification';
 import WebView, { WebViewMessageEvent } from 'react-native-webview';
 import { Provider } from 'react-redux';
 import { SimpleLoader } from './src/components/Loader';
 import SafeAreaProvider from './src/components/SafeAreaProvider';
 import { useAppDispatch } from './src/context/redux/hooks';
-import {
-  removeToken,
-  saveToken
-} from './src/context/redux/slice/app';
+import { removeToken, saveToken } from './src/context/redux/slice/app';
 import store from './src/context/redux/store';
 
 export interface onMessagePayload {
@@ -33,6 +30,9 @@ const App = () => {
   const dispatch = useAppDispatch();
   const [tokenState, setTokenState] = useState('');
   const [fcmTokenState, setFCMTokenState] = useState('');
+  const [channelId, setChannelId] = useState(
+    'fcm_fallback_notification_channel',
+  );
 
   const onMessage = (payload: WebViewMessageEvent) => {
     const data: onMessagePayload = JSON.parse(payload.nativeEvent.data);
@@ -72,26 +72,6 @@ const App = () => {
     return false;
   };
 
-  // fetches the user profile to get the FCM token if not present then creates a new FCM token
-  const getUserProfile = async (): Promise<void> => {
-    try {
-      console.log('tokenState', tokenState);
-      const res = await axios.get(`${Config.API_URL}/user`, {
-        headers: {
-          Authorization: tokenState,
-        },
-      });
-      if (res?.data?.deviceToken) {
-        console.log(res?.data?.deviceToken)
-        setFCMTokenState(res?.data?.deviceToken);
-      } else {
-        createFCMToken();
-      }
-    } catch (error) {
-      setFCMTokenState('');
-    }
-  };
-
   // updates the FCM token in the user profile
   const updateUserProfile = async (token: string): Promise<void> => {
     try {
@@ -105,6 +85,7 @@ const App = () => {
         },
       );
       setFCMTokenState(token || '');
+      console.log('token', token);
     } catch (error) {
       setFCMTokenState('');
     }
@@ -133,6 +114,26 @@ const App = () => {
       });
   };
 
+  const createChannel = () => {
+    PushNotification.createChannel(
+      {
+        channelId: 'channel_1', // (required)
+        channelName: 'My channel', // (required)
+        channelDescription: 'A channel to categorise your notifications', // (optional) default: undefined.
+        playSound: false, // (optional) default: true
+        soundName: 'default', // (optional) See `soundName` parameter of `localNotification` function
+        importance: Importance.HIGH, // (optional) default: Importance.HIGH. Int value of the Android notification importance
+        vibrate: true, // (optional) default: true. Creates the default vibration pattern if true.
+      },
+      () => {
+        PushNotification.getChannels(channelIds => {
+          console.log(channelIds);
+          setChannelId(channelIds[0]);
+        });
+      },
+    );
+  };
+
   useEffect(() => {
     if (Platform.OS === 'android') {
       BackHandler.addEventListener('hardwareBackPress', onAndroidBackPress);
@@ -158,6 +159,7 @@ const App = () => {
       console.log('A new background notification arrived:', remoteMessage);
       // Create a local notification
       PushNotification.localNotification({
+        channelId: channelId,
         id: Date.now().toString(),
         title: remoteMessage.notification.title,
         message: remoteMessage.notification.body,
@@ -174,7 +176,8 @@ const App = () => {
 
   useEffect(() => {
     if (tokenState) {
-      getUserProfile();
+      createChannel();
+      createFCMToken();
     }
   }, [tokenState]);
 
