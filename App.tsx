@@ -2,7 +2,6 @@ import messaging from '@react-native-firebase/messaging';
 import axios from 'axios';
 import React, { useEffect, useState } from 'react';
 import { Alert, BackHandler, Platform } from 'react-native';
-import Config from 'react-native-config';
 import PushNotification, { Importance } from 'react-native-push-notification';
 import WebView, { WebViewMessageEvent } from 'react-native-webview';
 import { Provider } from 'react-redux';
@@ -11,6 +10,9 @@ import SafeAreaProvider from './src/components/SafeAreaProvider';
 import { useAppDispatch } from './src/context/redux/hooks';
 import { removeToken, saveToken } from './src/context/redux/slice/app';
 import store from './src/context/redux/store';
+
+const API_URL= "https://myna-dev.enrootmumbai.in"
+const WEB_URL = "https://mynafe-git-feature-holidays-enroot-mumbai.vercel.app"
 
 export interface onMessagePayload {
   type?: string;
@@ -76,7 +78,7 @@ const App = () => {
   const updateUserProfile = async (token: string): Promise<void> => {
     try {
       const res = await axios.put(
-        `${Config.API_URL}/user/update`,
+        `${API_URL}/user/update`,
         {deviceToken: token},
         {
           headers: {
@@ -185,7 +187,7 @@ const App = () => {
     <SafeAreaProvider>
       <WebView
         ref={webRef}
-        source={{uri: `${Config.WEB_URL}/login`}}
+        source={{uri: `${WEB_URL}/login`}}
         allowsBackForwardNavigationGestures={true}
         injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
         javaScriptEnabled={true}

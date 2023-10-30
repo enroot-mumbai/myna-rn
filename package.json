@@ -16,7 +16,6 @@
     "axios": "^1.4.0",
     "react": "18.1.0",
     "react-native": "0.70.6",
-    "react-native-config": "^1.5.1",
     "react-native-push-notification": "^8.1.1",
     "react-native-webview": "^11.26.1",
     "react-redux": "^8.0.5"
