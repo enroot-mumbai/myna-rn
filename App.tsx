@@ -1,23 +1,24 @@
 import messaging from '@react-native-firebase/messaging';
 import axios from 'axios';
-import React, { useEffect, useState } from 'react';
-import { Alert, BackHandler, Platform } from 'react-native';
-import PushNotification, { Importance } from 'react-native-push-notification';
-import WebView, { WebViewMessageEvent } from 'react-native-webview';
-import { Provider } from 'react-redux';
-import { SimpleLoader } from './src/components/Loader';
+import React, {useEffect, useState} from 'react';
+import {Alert, BackHandler, Platform} from 'react-native';
+import PushNotification, {Importance} from 'react-native-push-notification';
+import WebView, {WebViewMessageEvent} from 'react-native-webview';
+import {Provider} from 'react-redux';
+import {SimpleLoader} from './src/components/Loader';
 import SafeAreaProvider from './src/components/SafeAreaProvider';
-import { useAppDispatch } from './src/context/redux/hooks';
-import { removeToken, saveToken } from './src/context/redux/slice/app';
+import {useAppDispatch} from './src/context/redux/hooks';
+import {removeToken, saveToken} from './src/context/redux/slice/app';
 import store from './src/context/redux/store';
 
-const API_URL= "https://myna-dev.enrootmumbai.in"
-const WEB_URL = "https://mynafe-git-feature-holidays-enroot-mumbai.vercel.app"
+const API_URL = 'https://myna-dev.enrootmumbai.in';
+const WEB_URL = 'https://mynafe-git-feature-holidays-enroot-mumbai.vercel.app';
 
 export interface onMessagePayload {
   type?: string;
   payload?: {};
 }
+s;
 
 const ProviderApp = () => {
   return (
@@ -199,9 +200,9 @@ const App = () => {
         scalesPageToFit={true}
         startInLoadingState={true}
         renderLoading={() => <SimpleLoader />}
-        onTouchEnd={e => {
-          if (e.nativeEvent?.pageX > 30) webRef?.current?.goForward();
-        }}
+        // onTouchEnd={e => {
+        //   if (e.nativeEvent?.pageX > 30) webRef?.current?.goForward();
+        // }}
       />
     </SafeAreaProvider>
   );
