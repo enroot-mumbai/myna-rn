@@ -1,7 +1,7 @@
 import messaging from '@react-native-firebase/messaging';
 import axios from 'axios';
 import React, {useEffect, useState} from 'react';
-import {Alert, BackHandler, Platform} from 'react-native';
+import {Alert, BackHandler, Platform, PermissionsAndroid} from 'react-native';
 import PushNotification, {Importance} from 'react-native-push-notification';
 import WebView, {WebViewMessageEvent} from 'react-native-webview';
 import {Provider} from 'react-redux';
@@ -18,7 +18,6 @@ export interface onMessagePayload {
   type?: string;
   payload?: {};
 }
-s;
 
 const ProviderApp = () => {
   return (
@@ -136,6 +135,27 @@ const App = () => {
       },
     );
   };
+
+  const requestNotificationPermission = async () => {
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      );
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('Notification permission granted');
+      } else {
+        console.log('Notification permission denied');
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+  };
+
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      requestNotificationPermission();
+    }
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
