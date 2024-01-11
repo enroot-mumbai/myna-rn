@@ -9,6 +9,7 @@ import {SimpleLoader} from './src/components/Loader';
 import SafeAreaProvider from './src/components/SafeAreaProvider';
 import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
+import crashlytics from '@react-native-firebase/crashlytics';
 import store from './src/context/redux/store';
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
@@ -208,6 +209,8 @@ const App = () => {
       createFCMToken();
     }
   }, [tokenState]);
+
+  useEffect(() => {});
 
   return (
     <SafeAreaProvider>
