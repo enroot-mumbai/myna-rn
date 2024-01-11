@@ -11,8 +11,8 @@ import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
 import store from './src/context/redux/store';
 
-const API_URL = 'https://myna-dev.enrootmumbai.in';
-const WEB_URL = 'https://mynafe-git-feature-holidays-enroot-mumbai.vercel.app';
+const API_URL = 'https://myna-prod.enrootmumbai.in';
+const WEB_URL = 'https://mynafe.vercel.app';
 
 export interface onMessagePayload {
   type?: string;
@@ -37,27 +37,31 @@ const App = () => {
   );
 
   const onMessage = (payload: WebViewMessageEvent) => {
-    const data: onMessagePayload = JSON.parse(payload.nativeEvent.data);
-    const isTokenAvailable =
-      data?.payload?.token !== '' &&
-      data?.payload?.token !== null &&
-      data?.payload?.token !== undefined;
+    try {
+      const data: onMessagePayload = JSON.parse(payload.nativeEvent.data);
+      const isTokenAvailable =
+        data?.payload?.token !== '' &&
+        data?.payload?.token !== null &&
+        data?.payload?.token !== undefined;
 
-    switch (data?.type) {
-      case 'LOG_IN':
-        if (!isTokenAvailable) {
-          dispatch(removeToken());
+      switch (data?.type) {
+        case 'LOG_IN':
+          if (!isTokenAvailable) {
+            dispatch(removeToken());
+            setTokenState('');
+            setFCMTokenState('');
+            return;
+          }
+          console.log('data?.payload?.token', data?.payload?.token);
+          setTokenState(data?.payload?.token);
+          return dispatch(saveToken(data?.payload?.token));
+        case 'LOG_OUT':
           setTokenState('');
           setFCMTokenState('');
-          return;
-        }
-        console.log('data?.payload?.token', data?.payload?.token);
-        setTokenState(data?.payload?.token);
-        return dispatch(saveToken(data?.payload?.token));
-      case 'LOG_OUT':
-        setTokenState('');
-        setFCMTokenState('');
-        return dispatch(removeToken());
+          return dispatch(removeToken());
+      }
+    } catch (e) {
+      console.log(e);
     }
   };
 
@@ -77,6 +81,7 @@ const App = () => {
   // updates the FCM token in the user profile
   const updateUserProfile = async (token: string): Promise<void> => {
     try {
+      console.log('token', token);
       const res = await axios.put(
         `${API_URL}/user/update`,
         {deviceToken: token},
@@ -90,6 +95,7 @@ const App = () => {
       console.log('token', token);
     } catch (error) {
       setFCMTokenState('');
+      console.log(error);
     }
   };
 
@@ -136,7 +142,7 @@ const App = () => {
     );
   };
 
-  const requestNotificationPermission = async () => {
+  async function requestNotificationPermission() {
     try {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
@@ -147,10 +153,9 @@ const App = () => {
         console.log('Notification permission denied');
       }
     } catch (err) {
-      console.warn(err);
+      console.error(err);
     }
-  };
-
+  }
   useEffect(() => {
     if (Platform.OS === 'android') {
       requestNotificationPermission();
@@ -206,24 +211,31 @@ const App = () => {
 
   return (
     <SafeAreaProvider>
-      <WebView
-        ref={webRef}
-        source={{uri: `${WEB_URL}/login`}}
-        allowsBackForwardNavigationGestures={true}
-        injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
-        javaScriptEnabled={true}
-        onMessage={onMessage}
-        cacheEnabled
-        originWhitelist={['https://*', 'http://*', 'data:*']}
-        allowsFullscreenVideo={true}
-        onError={error => Alert.alert('Something went wrong', error.type)}
-        scalesPageToFit={true}
-        startInLoadingState={true}
-        renderLoading={() => <SimpleLoader />}
-        // onTouchEnd={e => {
-        //   if (e.nativeEvent?.pageX > 30) webRef?.current?.goForward();
-        // }}
-      />
+      <>
+        <WebView
+          ref={webRef}
+          source={{uri: `${WEB_URL}/login`}}
+          allowsBackForwardNavigationGestures={true}
+          injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
+          javaScriptEnabled={true}
+          onMessage={onMessage}
+          cacheEnabled
+          originWhitelist={['https://*', 'http://*', 'data:*']}
+          allowsFullscreenVideo={true}
+          onError={error =>
+            Alert.alert(
+              `Something went wrong ${JSON.stringify(error)}`,
+              error.type,
+            )
+          }
+          scalesPageToFit={true}
+          startInLoadingState={true}
+          renderLoading={() => <SimpleLoader />}
+          // onTouchEnd={e => {`
+          //   if (e.nativeEvent?.pageX > 30) webRef?.current?.goForward();
+          // }}
+        />
+      </>
     </SafeAreaProvider>
   );
 };
