@@ -39,6 +39,7 @@ const App = () => {
   const [channelId, setChannelId] = useState(
     'fcm_fallback_notification_channel',
   );
+  const [userInteraction, setUserInteraction] = useState(false);
 
   PushNotification.configure({
     // (optional) Called when Token is generated (iOS and Android)
@@ -49,43 +50,29 @@ const App = () => {
     // (required) Called when a remote is received or opened, or local notification is opened
     onNotification: function (notification) {
       console.log('NOTIFICATION:', notification);
-
-      // process the notification
-
-      // (required) Called when a remote is received or opened, or local notification is opened
+      setUserInteraction(notification.userInteraction);
+      if (notification.userInteraction) {
+        const url = notification.data?.url;
+        if (url) {
+          webRef?.current?.injectJavaScript(`
+          window.location.href = '${url}';
+        `);
+        }
+      }
     },
-
-    // (optional) Called when Registered Action is pressed and invokeApp is false, if true onNotification will be called (Android)
     onAction: function (notification) {
       console.log('ACTION:', notification.action);
       console.log('NOTIFICATION:', notification);
-
-      // process the action
     },
-
-    // (optional) Called when the user fails to register for remote notifications. Typically occurs when APNS is having issues, or the device is a simulator. (iOS)
     onRegistrationError: function (err) {
       console.error(err.message, err);
     },
-
-    // IOS ONLY (optional): default: all - Permissions to register.
     permissions: {
       alert: true,
       badge: true,
       sound: true,
     },
-
-    // Should the initial notification be popped automatically
-    // default: true
     popInitialNotification: true,
-
-    /**
-     * (optional) default: true
-     * - Specified if permissions (ios) and token (android and ios) will requested or not,
-     * - if not, you must call PushNotificationsHandler.requestPermissions() later
-     * - if you are not using remote notification or do not have Firebase installed, use this:
-     *     requestPermissions: Platform.OS === 'ios'
-     */
     requestPermissions: true,
   });
 
@@ -233,7 +220,18 @@ const App = () => {
     // Listen for foreground notifications
     messaging().onMessage(async remoteMessage => {
       console.log('A new foreground notification arrived:', remoteMessage);
-      // handleRedirectNotification(`${WEB_URL}/chats`);
+      PushNotification.localNotification({
+        channelId: channelId,
+        id: Date.now().toString(),
+        title: remoteMessage?.notification.title,
+        message: remoteMessage?.notification.body,
+        playSound: true,
+        soundName: 'default',
+        importance: 'high',
+        vibrate: true,
+        vibration: 300,
+        actions: ['yes', 'no'],
+      });
     });
 
     // Listen for notifications when the app is in the background or terminated
@@ -245,32 +243,34 @@ const App = () => {
         id: Date.now().toString(),
         title: remoteMessage?.notification.title,
         message: remoteMessage?.notification.body,
+        playSound: true,
+        soundName: 'default',
+        importance: 'high',
+        vibrate: true,
+        vibration: 300,
+        actions: ['yes', 'no'],
       });
     });
   }, []);
 
   useEffect(() => {
-    messaging().onNotificationOpenedApp(async remoteMessage => {
-      console.log(
-        'Notification caused app to open from background state:',
-        remoteMessage.notification,
-      );
-      Alert.alert('Notification received');
-    });
-
-    // Check whether an initial notification is available
-    messaging()
-      .getInitialNotification()
-      .then(remoteMessage => {
-        if (remoteMessage) {
-          console.log(
-            'Notification caused app to open in quit state',
-            remoteMessage.notification,
-          );
-        } else {
-          console.log('App opened without notification');
-        }
+    const notificationListener = async () => {
+      await messaging().onNotificationOpenedApp(remoteMessage => {
+        console.log(
+          'Notification caused app to open from background state:',
+          remoteMessage.data,
+        );
       });
+
+      const initialNoti = await messaging().getInitialNotification();
+      if (initialNoti) {
+        console.log(
+          'Notification caused app to open from quit state:',
+          initialNoti.data,
+        );
+      }
+    };
+    notificationListener();
   }, []);
 
   useEffect(() => {
@@ -300,7 +300,7 @@ const App = () => {
           allowsFullscreenVideo={true}
           onError={(error: any) => {
             Alert.alert('something went wrong', JSON.stringify(error));
-            // crashlytics().recordError(error);
+            crashlytics().recordError(error);
           }}
           scalesPageToFit={true}
           startInLoadingState={true}
