@@ -1,7 +1,13 @@
 import messaging from '@react-native-firebase/messaging';
 import axios from 'axios';
 import React, {useEffect, useState} from 'react';
-import {Alert, BackHandler, Platform, PermissionsAndroid} from 'react-native';
+import {
+  Alert,
+  BackHandler,
+  Platform,
+  PermissionsAndroid,
+  Share,
+} from 'react-native';
 import PushNotification, {Importance} from 'react-native-push-notification';
 import WebView, {WebViewMessageEvent} from 'react-native-webview';
 import {Provider} from 'react-redux';
@@ -13,7 +19,7 @@ import crashlytics from '@react-native-firebase/crashlytics';
 import store from './src/context/redux/store';
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
-const WEB_URL = 'https://mynafe.vercel.app';
+const WEB_URL = 'https://mynafe-git-fix-pdf-enroot-mumbais-projects.vercel.app';
 
 // const API_URL = 'http://localhost:3001';
 // const WEB_URL = 'http://localhost:3000';
@@ -76,13 +82,15 @@ const App = () => {
     requestPermissions: true,
   });
 
-  const onMessage = (payload: WebViewMessageEvent) => {
+  const onMessage = async (payload: WebViewMessageEvent) => {
     try {
       const data: onMessagePayload = JSON.parse(payload.nativeEvent.data);
       const isTokenAvailable =
         data?.payload?.token !== '' &&
         data?.payload?.token !== null &&
         data?.payload?.token !== undefined;
+
+      console.log('data', data);
 
       switch (data?.type) {
         case 'LOG_IN':
@@ -100,6 +108,12 @@ const App = () => {
           setTokenState('');
           setFCMTokenState('');
           return dispatch(removeToken());
+        
+         default:
+          if (payload.nativeEvent.data.startsWith('share:')) {
+            const param = JSON.parse(payload.nativeEvent.data.replace('share:', ''));
+            handleShare(param);
+          }
       }
     } catch (e: any) {
       console.log(e);
@@ -107,10 +121,26 @@ const App = () => {
     }
   };
 
-  const INJECTED_JAVASCRIPT = `(function(message) {
-    const tokenLocalStorage = window.localStorage.getItem('token');
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
-  })();`;
+  const handleShare = async (param: { title?: string; text?: string; url?: string }) => {
+    try {
+      await Share.share(param);
+    } catch (error) {
+      Alert.alert('Error', 'An error occurred while sharing');
+    }
+
+
+ const INJECTED_JAVASCRIPT = `
+    (function(message) {
+      const tokenLocalStorage = window.localStorage.getItem('token');
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOG_IN', payload: { token: tokenLocalStorage } }));
+      if (navigator.share == null) {
+        navigator.share = (param) => {
+          window.ReactNativeWebView.postMessage('share:' + JSON.stringify(param));
+        };
+      }
+      true;
+    })();
+  `;
 
   const onAndroidBackPress = () => {
     if (webRef?.current) {
@@ -299,6 +329,7 @@ const App = () => {
           originWhitelist={['https://*', 'http://*', 'data:*']}
           allowsFullscreenVideo={true}
           onError={(error: any) => {
+            console.log('error', error);
             Alert.alert('something went wrong', JSON.stringify(error));
             crashlytics().recordError(error);
           }}
