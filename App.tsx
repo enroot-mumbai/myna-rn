@@ -108,10 +108,12 @@ const App = () => {
           setTokenState('');
           setFCMTokenState('');
           return dispatch(removeToken());
-        
-         default:
+
+        default:
           if (payload.nativeEvent.data.startsWith('share:')) {
-            const param = JSON.parse(payload.nativeEvent.data.replace('share:', ''));
+            const param = JSON.parse(
+              payload.nativeEvent.data.replace('share:', ''),
+            );
             handleShare(param);
           }
       }
@@ -121,26 +123,22 @@ const App = () => {
     }
   };
 
-  const handleShare = async (param: { title?: string; text?: string; url?: string }) => {
+  const handleShare = async (param: {
+    title?: string;
+    text?: string;
+    url?: string;
+  }) => {
     try {
       await Share.share(param);
     } catch (error) {
       Alert.alert('Error', 'An error occurred while sharing');
     }
+  };
 
-
- const INJECTED_JAVASCRIPT = `
-    (function(message) {
-      const tokenLocalStorage = window.localStorage.getItem('token');
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOG_IN', payload: { token: tokenLocalStorage } }));
-      if (navigator.share == null) {
-        navigator.share = (param) => {
-          window.ReactNativeWebView.postMessage('share:' + JSON.stringify(param));
-        };
-      }
-      true;
-    })();
-  `;
+  const INJECTED_JAVASCRIPT = `(function(message) {
+    const tokenLocalStorage = window.localStorage.getItem('token');
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
+  })();`;
 
   const onAndroidBackPress = () => {
     if (webRef?.current) {
@@ -336,13 +334,9 @@ const App = () => {
           scalesPageToFit={true}
           startInLoadingState={true}
           renderLoading={() => <SimpleLoader />}
-          // onTouchEnd={e => {
-          //   if (e.nativeEvent?.pageX > 30) webRef?.current?.goForward();
-          // }}
         />
       </>
     </SafeAreaProvider>
   );
 };
-
 export default ProviderApp;
