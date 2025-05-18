@@ -25,8 +25,8 @@ const API_URL = 'https://myna-prod.enrootmumbai.in';
 // const WEB_URL = 'https://mynafe-git-fix-pdf-enroot-mumbais-projects.vercel.app';
 // const WEB_URL = 'https://mynafe.vercel.app';
 // const API_URL = 'http://localhost:3001';
-// const WEB_URL = 'http://localhost:3000';
-const WEB_URL = 'https://mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app';
+const WEB_URL = 'http://localhost:3000';
+// const WEB_URL = 'https://mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app';
 
 export interface onMessagePayload {
   type?: string;

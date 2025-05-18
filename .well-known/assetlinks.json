@@ -1,8 +1,0 @@
-[{
-  "relation": ["delegate_permission/common.handle_all_urls"],
-  "target": {
-    "namespace": "android_app",
-    "package_name": "com.mynarnapp",
-    "sha256_cert_fingerprints": ["0F:38:A2:9A:85:B9:C6:25:F8:A4:E9:FB:4F:EA:A3:5B:C9:60:3B:22:A2:75:6A:5F:48:DB:BB:4D:4B:B8:E3:D4"]
-  }
-}] 

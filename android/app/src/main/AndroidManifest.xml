@@ -35,18 +35,6 @@
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             
-            <!-- Deep Linking -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                
-                <data
-                    android:scheme="https"
-                    android:host="mynafe.vercel.app"
-                    android:pathPrefix="/signup" />
-            </intent-filter>
-
             <!-- Deep Linking for testing-->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
@@ -54,13 +42,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data
-                    android:scheme="https"
-                    android:host="mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app"
+                    android:scheme="http"
+                    android:host="localhost"
+                    android:port="3000"
                     android:pathPrefix="/signup" />
             </intent-filter>
 
             <!-- HTTP scheme for development -->
-            <intent-filter>
+            <!-- <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
@@ -69,16 +58,7 @@
                     android:scheme="http"
                     android:host="localhost"
                     android:port="3000" />
-            </intent-filter>
-
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-
-                <data
-                    android:scheme="mynarnapp" />
-            </intent-filter>
+            </intent-filter> -->
 
         </activity>
         
