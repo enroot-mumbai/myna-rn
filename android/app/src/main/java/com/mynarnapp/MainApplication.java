@@ -2,6 +2,7 @@ package com.mynarnapp;
 
 import android.app.Application;
 import android.content.Context;
+import android.content.SharedPreferences;
 import com.facebook.react.PackageList;
 import com.facebook.react.ReactApplication;
 import com.facebook.react.ReactInstanceManager;
@@ -13,6 +14,10 @@ import com.mynarnapp.newarchitecture.MainApplicationReactNativeHost;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import com.mynarnapp.InstallReferrerPackage;
+import com.android.installreferrer.api.InstallReferrerClient;
+import com.android.installreferrer.api.InstallReferrerStateListener;
+import com.android.installreferrer.api.ReferrerDetails;
+import android.util.Log;
 
 public class MainApplication extends Application implements ReactApplication {
 
@@ -58,6 +63,57 @@ public class MainApplication extends Application implements ReactApplication {
     ReactFeatureFlags.useTurboModules = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED;
     SoLoader.init(this, /* native exopackage */ false);
     initializeFlipper(this, getReactNativeHost().getReactInstanceManager());
+    
+    // Initialize the Install Referrer API
+    initializeInstallReferrer();
+  }
+
+  private void initializeInstallReferrer() {
+    Log.d("MainApplication", "Initializing Install Referrer API");
+    
+    InstallReferrerClient referrerClient = InstallReferrerClient.newBuilder(this).build();
+    referrerClient.startConnection(new InstallReferrerStateListener() {
+        @Override
+        public void onInstallReferrerSetupFinished(int responseCode) {
+            Log.d("MainApplication", "Install Referrer setup finished with code: " + responseCode);
+            
+            if (responseCode == InstallReferrerClient.InstallReferrerResponse.OK) {
+                Log.d("MainApplication", "Install Referrer API connected successfully");
+                
+                // Try to get the referrer directly and store it
+                try {
+                    ReferrerDetails response = referrerClient.getInstallReferrer();
+                    String referrerUrl = response.getInstallReferrer();
+                    long referrerClickTime = response.getReferrerClickTimestampSeconds();
+                    long appInstallTime = response.getInstallBeginTimestampSeconds();
+                    
+                    Log.d("MainApplication", "Direct referrer check - URL: " + referrerUrl);
+                    Log.d("MainApplication", "Direct referrer check - Click time: " + referrerClickTime);
+                    Log.d("MainApplication", "Direct referrer check - Install time: " + appInstallTime);
+                    
+                    // Store the referrer in SharedPreferences
+                    SharedPreferences prefs = getSharedPreferences("ReferrerPrefs", Context.MODE_PRIVATE);
+                    SharedPreferences.Editor editor = prefs.edit();
+                    editor.putString("installReferrer", referrerUrl);
+                    editor.putLong("referrerClickTime", referrerClickTime);
+                    editor.putLong("installBeginTime", appInstallTime);
+                    editor.putLong("referrerTimestamp", System.currentTimeMillis());
+                    editor.apply();
+                    
+                    Log.d("MainApplication", "Stored referrer data in SharedPreferences");
+                } catch (Exception e) {
+                    Log.e("MainApplication", "Error getting referrer directly: " + e.getMessage());
+                }
+            } else {
+                Log.e("MainApplication", "Install Referrer API connection failed with code: " + responseCode);
+            }
+        }
+
+        @Override
+        public void onInstallReferrerServiceDisconnected() {
+            Log.e("MainApplication", "Install Referrer service disconnected");
+        }
+    });
   }
 
   /**

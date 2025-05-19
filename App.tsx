@@ -19,6 +19,7 @@ import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
 import crashlytics from '@react-native-firebase/crashlytics';
 import store from './src/context/redux/store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 const { InstallReferrer } = NativeModules;
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
@@ -342,25 +343,77 @@ const App = () => {
 
   // Add this helper function at the top of your file, outside of any component
   const parseQueryString = (queryString: string): Record<string, string> => {
+    console.log('Parsing query string:', queryString);
+    
     const params: Record<string, string> = {};
     
-    // Remove leading '?' if present
-    const query = queryString.startsWith('?') ? queryString.substring(1) : queryString;
+    // Handle empty or undefined query string
+    if (!queryString) {
+      return params;
+    }
     
-    // Split into key-value pairs
-    const pairs = query.split('&');
+    // Split the string on & to get key-value pairs
+    const pairs = queryString.split('&');
     
     for (const pair of pairs) {
+      // Split each pair on = to get key and value
       const [key, value] = pair.split('=');
+      
       if (key && value) {
-        params[decodeURIComponent(key)] = decodeURIComponent(value);
+        // Decode both key and value
+        const decodedKey = decodeURIComponent(key);
+        const decodedValue = decodeURIComponent(value);
+        
+        console.log(`Parsed param: ${decodedKey} = ${decodedValue}`);
+        
+        params[decodedKey] = decodedValue;
       }
     }
     
     return params;
   };
 
-  // Then update your checkInstallReferrer function
+  // Add this function to check for stored referrer data
+  const checkStoredReferrer = async () => {
+    try {
+      // First check if we have the referrer in AsyncStorage (from a previous session)
+      const storedProgram = await AsyncStorage.getItem('referrer_program');
+      const storedRoute = await AsyncStorage.getItem('referrer_route');
+      const storedTimestamp = await AsyncStorage.getItem('referrer_timestamp');
+      
+      if (storedProgram && storedRoute && storedTimestamp) {
+        console.log('📦 Found stored referrer data:', { program: storedProgram, route: storedRoute });
+        
+        // Check if the stored data is still valid (less than 90 days old)
+        const referrerAge = Date.now() - parseInt(storedTimestamp);
+        const ninetyDaysInMs = 90 * 24 * 60 * 60 * 1000;
+        
+        if (referrerAge < ninetyDaysInMs) {
+          console.log('📦 Stored referrer is still valid');
+          
+          // Use the stored referrer data
+          if (storedRoute === 'signup' || storedRoute === '/signup') {
+            const webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(storedProgram)}`;
+            console.log('📦 Setting WebView URL from stored referrer:', webViewUrl);
+            setInitialUrl(webViewUrl);
+            return true;
+          }
+        } else {
+          console.log('📦 Stored referrer is expired, clearing it');
+          await AsyncStorage.removeItem('referrer_program');
+          await AsyncStorage.removeItem('referrer_route');
+          await AsyncStorage.removeItem('referrer_timestamp');
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('❌ Error checking stored referrer:', error);
+      return false;
+    }
+  };
+
+  // Update your checkInstallReferrer function
   const checkInstallReferrer = async () => {
     console.log('📦 Checking install referrer...');
     
@@ -374,27 +427,45 @@ const App = () => {
       if (referrerDetails && referrerDetails.installReferrer) {
         console.log('📦 Install referrer found:', referrerDetails.installReferrer);
         
-        // Parse the referrer URL parameters using our custom function
+        // Parse the referrer URL parameters
         const referrerString = referrerDetails.installReferrer;
         const params = parseQueryString(referrerString);
         console.log('📦 Parsed referrer params:', params);
         
-        const program = params['program'];
-        const route = params['route'];
+        // Look for our custom parameters
+        const program = params['program'] || params['utm_campaign'];
+        const route = params['route'] || params['utm_content'];
         
-        // If we have a program and the route is signup, navigate to signup
-        if (program && route === 'signup') {
+        // Store the referrer data for future use
+        if (program) {
+          await AsyncStorage.setItem('referrer_program', program);
+          console.log('📦 Stored program in AsyncStorage:', program);
+        }
+        
+        if (route) {
+          await AsyncStorage.setItem('referrer_route', route);
+          console.log('📦 Stored route in AsyncStorage:', route);
+        }
+        
+        await AsyncStorage.setItem('referrer_timestamp', Date.now().toString());
+        
+        // If we have a program and route is signup, navigate to signup
+        if (program && (route === 'signup' || route === '/signup')) {
           const webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(program)}`;
           console.log('📦 Setting WebView URL from referrer:', webViewUrl);
           setInitialUrl(webViewUrl);
+          return true;
         } else {
           console.log('📦 Missing program or route in referrer');
         }
       } else {
         console.log('📦 No install referrer found');
       }
+      
+      return false;
     } catch (error) {
       console.error('❌ Error getting install referrer:', error);
+      return false;
     }
   };
 
@@ -471,45 +542,44 @@ const App = () => {
     }
   };
 
-  // Handle initial deep link
+  // Update your initialization logic
   useEffect(() => {
-    // Check for deep links and install referrer
-    const initializeDeepLinks = async () => {
+    const initializeApp = async () => {
       console.log('🚀 Initializing deep links...');
       
+      // First check if we have stored referrer data
+      const hasStoredReferrer = await checkStoredReferrer();
+      if (hasStoredReferrer) {
+        console.log('🚀 Using stored referrer data');
+        return;
+      }
+      
+      // Check for deep links
+      console.log('🚀 Checking for initial URL...');
       try {
-        // Check for initial URL (deep link)
-        console.log('🚀 Checking for initial URL...');
         const url = await Linking.getInitialURL();
-        
         if (url) {
           console.log('🚀 Initial URL found:', url);
           handleDeepLink(url);
         } else {
-          console.log('🚀 No initial URL found');
+          console.log('🚀 No initial URL, checking for install referrer...');
+          await checkInstallReferrer();
         }
-        
-        // Check for install referrer (for Play Store installs)
-        console.log('🚀 Checking for install referrer...');
-        checkInstallReferrer();
       } catch (error) {
         console.error('❌ Error initializing deep links:', error);
       }
+      
+      // Set up URL event listener
+      console.log('🚀 Setting up URL event listener');
+      const subscription = Linking.addEventListener('url', ({url}) => {
+        console.log('URL event received:', url);
+        handleDeepLink(url);
+      });
+      
+      return () => subscription.remove();
     };
     
-    initializeDeepLinks();
-    
-    // Add listener for URL events
-    console.log('🚀 Setting up URL event listener');
-    const subscription = Linking.addEventListener('url', ({url}) => {
-      console.log('🚀 URL event received:', url);
-      handleDeepLink(url);
-    });
-
-    return () => {
-      console.log('🚀 Cleaning up URL event listener');
-      subscription.remove();
-    };
+    initializeApp();
   }, []);
 
   // Modify WebView props to handle navigation state changes
@@ -535,6 +605,55 @@ const App = () => {
     });
     
     return () => subscription.remove();
+  }, []);
+
+  // Add this function to test the referrer parsing
+  const testReferrer = async (referrerString: string) => {
+    console.log('🧪 Testing referrer:', referrerString);
+    
+    try {
+      // Call the test method in the native module
+      const referrerDetails = await InstallReferrer.testReferrer(referrerString);
+      
+      console.log('🧪 Test referrer details:', referrerDetails);
+      
+      if (referrerDetails && referrerDetails.installReferrer) {
+        console.log('🧪 Test referrer found:', referrerDetails.installReferrer);
+        
+        // Parse the referrer URL parameters
+        const params = parseQueryString(referrerDetails.installReferrer);
+        console.log('🧪 Parsed test referrer params:', params);
+        
+        // Look for our custom parameters
+        const program = params['program'] || params['utm_campaign'];
+        const route = params['route'] || params['utm_content'];
+        
+        console.log('🧪 Extracted program:', program, 'route:', route);
+        
+        // If we have a program and route is signup, navigate to signup
+        if (program && (route === 'signup' || route === '/signup')) {
+          const webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(program)}`;
+          console.log('🧪 Setting WebView URL from test referrer:', webViewUrl);
+          setInitialUrl(webViewUrl);
+          return true;
+        } else {
+          console.log('🧪 Missing program or route in test referrer');
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ Error testing referrer:', error);
+      return false;
+    }
+  };
+
+  // Call this in your useEffect to test with different referrer strings
+  useEffect(() => {
+    // Test with direct program and route
+    testReferrer('program=TestProgram&route=signup');
+    
+    // Test with UTM parameters
+    // testReferrer('utm_source=test&utm_medium=test&utm_campaign=TestProgram&utm_content=signup');
   }, []);
 
   return (

@@ -26,6 +26,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
 
             </intent-filter>
+            
+            <!-- Add this intent filter to handle Play Store referrers -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <!-- Add your domain here -->
+                <data
+                    android:scheme="https"
+                    android:host="mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app" />
+            </intent-filter>
+            
+            <!-- Add custom scheme support -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <data android:scheme="mynarnapp" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <data
+                    android:scheme="http"
+                    android:host="localhost"
+                    android:port="3000" />
+            </intent-filter>
         </activity>
         <activity
             android:name=".MainActivity"
@@ -42,14 +74,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data
-                    android:scheme="http"
-                    android:host="localhost"
-                    android:port="3000"
-                    android:pathPrefix="/signup" />
+                    android:scheme="https"
+                    android:host="mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app"/>
             </intent-filter>
 
             <!-- HTTP scheme for development -->
-            <!-- <intent-filter>
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
@@ -58,14 +88,15 @@
                     android:scheme="http"
                     android:host="localhost"
                     android:port="3000" />
-            </intent-filter> -->
+            </intent-filter>
 
         </activity>
         
         <!-- Play Store Referrer Receiver -->
         <receiver
             android:name="com.android.installreferrer.api.InstallReferrerReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.INSTALL_PACKAGES">
             <intent-filter>
                 <action android:name="com.android.vending.INSTALL_REFERRER" />
             </intent-filter>

@@ -16,7 +16,7 @@ public class InstallReferrerPackage implements ReactPackage {
     @Override
     public List<NativeModule> createNativeModules(@NonNull ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
-        modules.add(new InstallReferrerModule(reactContext));
+        modules.add(new InstallReferrer(reactContext));
         return modules;
     }
 
