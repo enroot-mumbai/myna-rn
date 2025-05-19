@@ -22,10 +22,11 @@
     "react": "18.1.0",
     "react-native": "^0.70.6",
     "react-native-gesture-handler": "^2.5.0",
+    "react-native-play-install-referrer": "^1.1.9",
     "react-native-push-notification": "^8.1.1",
     "react-native-reanimated": "^2.9.1",
     "react-native-safe-area-context": "^3.3.2",
-    "react-native-screens": "^3.22.0",
+    "react-native-screens": "3.22.0",
     "react-native-webview": "^11.26.1",
     "react-redux": "^8.0.5"
   },
