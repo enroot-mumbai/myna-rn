@@ -148,22 +148,6 @@ public class InstallReferrer extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void testReferrer(String testReferrer, Promise promise) {
-        Log.d(TAG, "Testing with referrer: " + testReferrer);
-        
-        // Store the test referrer data
-        storeReferrerData(testReferrer, System.currentTimeMillis() / 1000, System.currentTimeMillis() / 1000);
-        
-        WritableMap result = Arguments.createMap();
-        result.putString("installReferrer", testReferrer);
-        result.putDouble("referrerClickTimestampSeconds", System.currentTimeMillis() / 1000);
-        result.putDouble("installBeginTimestampSeconds", System.currentTimeMillis() / 1000);
-        result.putBoolean("isValid", true);
-        
-        promise.resolve(result);
-    }
-    
-    @ReactMethod
     public void clearStoredReferrer(Promise promise) {
         SharedPreferences prefs = reactContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();

@@ -26,8 +26,8 @@ const API_URL = 'https://myna-prod.enrootmumbai.in';
 // const WEB_URL = 'https://mynafe-git-fix-pdf-enroot-mumbais-projects.vercel.app';
 // const WEB_URL = 'https://mynafe.vercel.app';
 // const API_URL = 'http://localhost:3001';
-const WEB_URL = 'http://localhost:3000';
-// const WEB_URL = 'https://mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app';
+// const WEB_URL = 'http://localhost:3000';
+const WEB_URL = 'https://mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app';
 
 export interface onMessagePayload {
   type?: string;
@@ -605,55 +605,6 @@ const App = () => {
     });
     
     return () => subscription.remove();
-  }, []);
-
-  // Add this function to test the referrer parsing
-  const testReferrer = async (referrerString: string) => {
-    console.log('🧪 Testing referrer:', referrerString);
-    
-    try {
-      // Call the test method in the native module
-      const referrerDetails = await InstallReferrer.testReferrer(referrerString);
-      
-      console.log('🧪 Test referrer details:', referrerDetails);
-      
-      if (referrerDetails && referrerDetails.installReferrer) {
-        console.log('🧪 Test referrer found:', referrerDetails.installReferrer);
-        
-        // Parse the referrer URL parameters
-        const params = parseQueryString(referrerDetails.installReferrer);
-        console.log('🧪 Parsed test referrer params:', params);
-        
-        // Look for our custom parameters
-        const program = params['program'] || params['utm_campaign'];
-        const route = params['route'] || params['utm_content'];
-        
-        console.log('🧪 Extracted program:', program, 'route:', route);
-        
-        // If we have a program and route is signup, navigate to signup
-        if (program && (route === 'signup' || route === '/signup')) {
-          const webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(program)}`;
-          console.log('🧪 Setting WebView URL from test referrer:', webViewUrl);
-          setInitialUrl(webViewUrl);
-          return true;
-        } else {
-          console.log('🧪 Missing program or route in test referrer');
-        }
-      }
-      return false;
-    } catch (error) {
-      console.error('❌ Error testing referrer:', error);
-      return false;
-    }
-  };
-
-  // Call this in your useEffect to test with different referrer strings
-  useEffect(() => {
-    // Test with direct program and route
-    testReferrer('program=TestProgram&route=signup');
-    
-    // Test with UTM parameters
-    // testReferrer('utm_source=test&utm_medium=test&utm_campaign=TestProgram&utm_content=signup');
   }, []);
 
   return (
