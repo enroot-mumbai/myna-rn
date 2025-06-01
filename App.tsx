@@ -23,18 +23,13 @@ import store from './src/context/redux/store';
 import {
   checkStoredReferrer,
   checkInstallReferrer,
-  handleDeepLink
+  handleDeepLink,
 } from './src/utils/DeepLinkHandler';
 
-const { InstallReferrer } = NativeModules;
+const {InstallReferrer} = NativeModules;
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
-// const WEB_URL = 'https://mynafe-git-fix-pdf-enroot-mumbais-projects.vercel.app';
-// const WEB_URL = 'https://mynafe.vercel.app';
-// const API_URL = 'http://localhost:3001';
-// const WEB_URL = 'http://localhost:3000';
-const WEB_URL = 'https://mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app';
-
+const WEB_URL = 'https://mynafe.vercel.app';
 export interface onMessagePayload {
   type?: string;
   payload?: {
@@ -53,8 +48,8 @@ const ProviderApp = () => {
 
 const App = () => {
   const webRef = useRef<WebView>(null);
-//   console.log("WEB_URL", WEB_URL);
-    const [initialUrl, setInitialUrl] = useState(WEB_URL);
+  //   console.log("WEB_URL", WEB_URL);
+  const [initialUrl, setInitialUrl] = useState(WEB_URL);
 
   const dispatch = useAppDispatch();
   const [tokenState, setTokenState] = useState('');
@@ -151,7 +146,7 @@ const App = () => {
       // Make sure url is not undefined for Share.share
       const shareParams = {
         ...param,
-        url: param.url || ''  // Provide default empty string if url is undefined
+        url: param.url || '', // Provide default empty string if url is undefined
       };
       await Share.share(shareParams);
     } catch (error) {
@@ -272,11 +267,13 @@ const App = () => {
     // Listen for foreground notifications
     messaging().onMessage(async remoteMessage => {
       console.log('A new foreground notification arrived:', remoteMessage);
-      
+
       // Safely access notification properties with proper null checks
-      const notificationTitle = remoteMessage?.notification?.title || 'New Notification';
-      const notificationBody = remoteMessage?.notification?.body || 'You have a new notification';
-      
+      const notificationTitle =
+        remoteMessage?.notification?.title || 'New Notification';
+      const notificationBody =
+        remoteMessage?.notification?.body || 'You have a new notification';
+
       PushNotification.localNotification({
         channelId: channelId,
         id: Date.now().toString(),
@@ -294,11 +291,13 @@ const App = () => {
     // Listen for notifications when the app is in the background or terminated
     messaging().setBackgroundMessageHandler(async remoteMessage => {
       console.log('A new background notification arrived:', remoteMessage);
-      
+
       // Safely access notification properties with proper null checks
-      const notificationTitle = remoteMessage?.notification?.title || 'New Notification';
-      const notificationBody = remoteMessage?.notification?.body || 'You have a new notification';
-      
+      const notificationTitle =
+        remoteMessage?.notification?.title || 'New Notification';
+      const notificationBody =
+        remoteMessage?.notification?.body || 'You have a new notification';
+
       // Create a local notification
       PushNotification.localNotification({
         channelId: channelId,
@@ -350,23 +349,28 @@ const App = () => {
   useEffect(() => {
     const initializeApp = async () => {
       // Check stored referrer first
-      const { hasStoredReferrer, url: storedUrl } = await checkStoredReferrer(WEB_URL);
+      const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(
+        WEB_URL,
+      );
       if (hasStoredReferrer && storedUrl) {
         setInitialUrl(storedUrl);
         return;
       }
-      
+
       // Check for deep links
       try {
-        const initialUrl = await Linking.getInitialURL();
-        if (initialUrl) {
-          const deepLinkUrl = handleDeepLink(initialUrl, WEB_URL);
+        const url = await Linking.getInitialURL();
+        if (url) {
+          const deepLinkUrl = handleDeepLink(url, WEB_URL);
           if (deepLinkUrl) {
             setInitialUrl(deepLinkUrl);
           }
         } else {
           // Check install referrer if no deep link
-          const { hasReferrer, url: referrerUrl } = await checkInstallReferrer(WEB_URL, InstallReferrer);
+          const {hasReferrer, url: referrerUrl} = await checkInstallReferrer(
+            WEB_URL,
+            InstallReferrer,
+          );
           if (hasReferrer && referrerUrl) {
             setInitialUrl(referrerUrl);
           }
@@ -374,7 +378,7 @@ const App = () => {
       } catch (error) {
         console.error('❌ Error initializing deep links:', error);
       }
-      
+
       // Set up URL event listener
       const subscription = Linking.addEventListener('url', ({url}) => {
         const deepLinkUrl = handleDeepLink(url, WEB_URL);
@@ -382,10 +386,10 @@ const App = () => {
           setInitialUrl(deepLinkUrl);
         }
       });
-      
+
       return () => subscription.remove();
     };
-    
+
     initializeApp();
   }, []);
 
@@ -404,11 +408,11 @@ const App = () => {
     Linking.getInitialURL().then(url => {
       console.log('Initial URL:', url);
     });
-    
+
     const subscription = Linking.addEventListener('url', ({url}) => {
       console.log('URL event received:', url);
     });
-    
+
     return () => subscription.remove();
   }, []);
 
@@ -434,15 +438,15 @@ const App = () => {
           scalesPageToFit={true}
           startInLoadingState={true}
           renderLoading={() => <SimpleLoader />}
-          onHttpError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
+          onHttpError={syntheticEvent => {
+            const {nativeEvent} = syntheticEvent;
             console.warn(
               'WebView HTTP Error',
-              `URL: ${nativeEvent.url}, Status: ${nativeEvent.statusCode}`
+              `URL: ${nativeEvent.url}, Status: ${nativeEvent.statusCode}`,
             );
           }}
-          onLoadStart={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
+          onLoadStart={syntheticEvent => {
+            const {nativeEvent} = syntheticEvent;
             console.log('Loading URL:', nativeEvent.url);
           }}
         />
