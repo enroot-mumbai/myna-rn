@@ -209,24 +209,26 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
     } else {
       let pathname = url;
 
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        // Check if it's a mynafe.vercel.app URL
-        if (url.includes('mynafe.vercel.app') || url.includes('localhost')) {
-          const urlObj = new URL(url);
-          pathname = urlObj.pathname;
-          // Parse query parameters from web URL
-          for (const [key, value] of urlObj.searchParams.entries()) {
-            queryParams[key] = value;
-          }
-        } else {
-          const domainEndIndex = url.indexOf('/', url.indexOf('//') + 2);
-          if (domainEndIndex !== -1) {
-            pathname = url.substring(domainEndIndex);
+              if (url.startsWith('http://') || url.startsWith('https://')) {
+          // Check if it's any of our supported domains
+          if (url.includes('mynafe.vercel.app') || 
+              url.includes('localhost') || 
+              url.includes('mynafe-git-feature-languagesuppo-df59ca-enroot-mumbais-projects.vercel.app')) {
+            const urlObj = new URL(url);
+            pathname = urlObj.pathname;
+            // Parse query parameters from web URL
+            for (const [key, value] of urlObj.searchParams.entries()) {
+              queryParams[key] = value;
+            }
           } else {
-            pathname = '/';
+            const domainEndIndex = url.indexOf('/', url.indexOf('//') + 2);
+            if (domainEndIndex !== -1) {
+              pathname = url.substring(domainEndIndex);
+            } else {
+              pathname = '/';
+            }
           }
         }
-      }
 
       const [pathPart, queryPart] = pathname.split('?');
       path = pathPart;
