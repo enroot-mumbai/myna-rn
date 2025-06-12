@@ -24,6 +24,7 @@ import {
   checkStoredReferrer,
   checkInstallReferrer,
   handleDeepLink,
+  getStoredProgram,
 } from './src/utils/DeepLinkHandler';
 
 const {InstallReferrer} = NativeModules;
@@ -117,11 +118,20 @@ const App = () => {
           // Make sure we're setting a string value to the state
           const token = data?.payload?.token || '';
           setTokenState(token);
-          return dispatch(saveToken(token));
+          dispatch(saveToken(token));
+          return;
         case 'LOG_OUT':
           setTokenState('');
           setFCMTokenState('');
           return dispatch(removeToken());
+
+        case 'GET_STORED_PROGRAM':
+          const storedProgramData = await getStoredProgram();
+          webRef?.current?.postMessage(JSON.stringify({
+            type: 'STORED_PROGRAM_RESPONSE',
+            payload: storedProgramData
+          }));
+          return;
 
         default:
           if (payload.nativeEvent.data.startsWith('share:')) {
@@ -157,6 +167,11 @@ const App = () => {
   const INJECTED_JAVASCRIPT = `(function(message) {
     const tokenLocalStorage = window.localStorage.getItem('token');
     window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
+    
+    // Add function to get stored program data
+    window.getStoredProgram = function() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'GET_STORED_PROGRAM'}));
+    };
   })();`;
 
   const onAndroidBackPress = () => {

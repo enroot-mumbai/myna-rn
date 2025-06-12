@@ -53,8 +53,6 @@
                     android:scheme="https"
                    android:host="mynafe.vercel.app" />
             </intent-filter>
-
-
         </activity>
         
         <receiver
