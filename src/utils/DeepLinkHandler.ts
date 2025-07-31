@@ -72,6 +72,7 @@ export const checkStoredReferrer = async (
     const storedProgram = await AsyncStorage.getItem('referrer_program');
     const storedRoute = await AsyncStorage.getItem('referrer_route');
     const storedLanguage = await AsyncStorage.getItem('referrer_language');
+    const storedRef = await AsyncStorage.getItem('referrer_ref');
     const storedTimestamp = await AsyncStorage.getItem('referrer_timestamp');
 
     if (storedProgram && storedRoute && storedTimestamp) {
@@ -88,6 +89,12 @@ export const checkStoredReferrer = async (
           let webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(storedProgram)}`;
           webViewUrl = buildUrlWithLanguage(webViewUrl, storedLanguage || undefined);
           
+          // Add ref parameter if stored
+          if (storedRef) {
+            const separator = webViewUrl.includes('?') ? '&' : '?';
+            webViewUrl += `${separator}ref=${encodeURIComponent(storedRef)}`;
+          }
+          
           // Mark app as launched after first signup redirect
           if (firstLaunch) {
             await markAppAsLaunched();
@@ -100,6 +107,7 @@ export const checkStoredReferrer = async (
         await AsyncStorage.removeItem('referrer_program');
         await AsyncStorage.removeItem('referrer_route');
         await AsyncStorage.removeItem('referrer_language');
+        await AsyncStorage.removeItem('referrer_ref');
         await AsyncStorage.removeItem('referrer_timestamp');
       }
     }
@@ -112,10 +120,11 @@ export const checkStoredReferrer = async (
 };
 
 // Get stored program for prefilling forms
-export const getStoredProgram = async (): Promise<{program?: string; language?: string}> => {
+export const getStoredProgram = async (): Promise<{program?: string; language?: string; ref?: string}> => {
   try {
     const storedProgram = await AsyncStorage.getItem('referrer_program');
     const storedLanguage = await AsyncStorage.getItem('referrer_language');
+    const storedRef = await AsyncStorage.getItem('referrer_ref');
     const storedTimestamp = await AsyncStorage.getItem('referrer_timestamp');
 
     if (storedProgram && storedTimestamp) {
@@ -123,7 +132,11 @@ export const getStoredProgram = async (): Promise<{program?: string; language?: 
       const ninetyDaysInMs = 90 * 24 * 60 * 60 * 1000;
 
       if (referrerAge < ninetyDaysInMs) {
-        return {program: storedProgram, language: storedLanguage || undefined};
+        return {
+          program: storedProgram, 
+          language: storedLanguage || undefined,
+          ref: storedRef || undefined
+        };
       }
     }
 
@@ -149,6 +162,7 @@ export const checkInstallReferrer = async (
       const program = params['program'] || params['utm_campaign'];
       const route = params['route'] || params['utm_content'];
       const language = params['language'] || params['lang'];
+      const ref = params['ref'];
 
       // Store referrer data
       if (program) {
@@ -163,6 +177,10 @@ export const checkInstallReferrer = async (
         await AsyncStorage.setItem('referrer_language', language);
       }
 
+      if (ref) {
+        await AsyncStorage.setItem('referrer_ref', ref);
+      }
+
       await AsyncStorage.setItem('referrer_timestamp', Date.now().toString());
 
       // Check if user is logged in and if this is first launch
@@ -173,6 +191,12 @@ export const checkInstallReferrer = async (
       if (program && (route === 'signup' || route === '/signup') && (!isLoggedIn || firstLaunch)) {
         let webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(program)}`;
         webViewUrl = buildUrlWithLanguage(webViewUrl, language);
+        
+        // Add ref parameter if present
+        if (ref) {
+          const separator = webViewUrl.includes('?') ? '&' : '?';
+          webViewUrl += `${separator}ref=${encodeURIComponent(ref)}`;
+        }
         
         // Mark app as launched after first signup redirect
         if (firstLaunch) {
@@ -251,6 +275,12 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
       if (queryParams['language'] || queryParams['lang']) {
         const language = queryParams['language'] || queryParams['lang'];
         webViewUrl = buildUrlWithLanguage(webViewUrl, language);
+      }
+      
+      // Add ref parameter if present
+      if (queryParams['ref']) {
+        const separator = webViewUrl.includes('?') ? '&' : '?';
+        webViewUrl += `${separator}ref=${encodeURIComponent(queryParams['ref'])}`;
       }
       
       return webViewUrl;
