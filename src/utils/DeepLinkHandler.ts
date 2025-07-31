@@ -75,7 +75,7 @@ export const checkStoredReferrer = async (
     const storedRef = await AsyncStorage.getItem('referrer_ref');
     const storedTimestamp = await AsyncStorage.getItem('referrer_timestamp');
 
-    if (storedProgram && storedRoute && storedTimestamp) {
+    if (storedRoute && storedTimestamp) {
       const referrerAge = Date.now() - parseInt(storedTimestamp);
       const ninetyDaysInMs = 90 * 24 * 60 * 60 * 1000;
 
@@ -86,7 +86,13 @@ export const checkStoredReferrer = async (
 
         // Only redirect to signup if it's first launch or user is not logged in
         if ((storedRoute === 'signup' || storedRoute === '/signup') && (!isLoggedIn || firstLaunch)) {
-          let webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(storedProgram)}`;
+          let webViewUrl = `${WEB_URL}/signup`;
+          
+          // Add program parameter if stored
+          if (storedProgram) {
+            webViewUrl += `?program=${encodeURIComponent(storedProgram)}`;
+          }
+          
           webViewUrl = buildUrlWithLanguage(webViewUrl, storedLanguage || undefined);
           
           // Add ref parameter if stored
@@ -127,13 +133,13 @@ export const getStoredProgram = async (): Promise<{program?: string; language?: 
     const storedRef = await AsyncStorage.getItem('referrer_ref');
     const storedTimestamp = await AsyncStorage.getItem('referrer_timestamp');
 
-    if (storedProgram && storedTimestamp) {
+    if (storedTimestamp) {
       const referrerAge = Date.now() - parseInt(storedTimestamp);
       const ninetyDaysInMs = 90 * 24 * 60 * 60 * 1000;
 
       if (referrerAge < ninetyDaysInMs) {
         return {
-          program: storedProgram, 
+          program: storedProgram || undefined, 
           language: storedLanguage || undefined,
           ref: storedRef || undefined
         };
@@ -188,8 +194,14 @@ export const checkInstallReferrer = async (
       const firstLaunch = await isFirstLaunch();
 
       // Only redirect to signup if it's first launch or user is not logged in
-      if (program && (route === 'signup' || route === '/signup') && (!isLoggedIn || firstLaunch)) {
-        let webViewUrl = `${WEB_URL}/signup?program=${encodeURIComponent(program)}`;
+      if ((route === 'signup' || route === '/signup') && (!isLoggedIn || firstLaunch)) {
+        let webViewUrl = `${WEB_URL}/signup`;
+        
+        // Add program parameter if present
+        if (program) {
+          webViewUrl += `?program=${encodeURIComponent(program)}`;
+        }
+        
         webViewUrl = buildUrlWithLanguage(webViewUrl, language);
         
         // Add ref parameter if present
