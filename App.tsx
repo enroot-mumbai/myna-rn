@@ -30,8 +30,7 @@ import {
 const {InstallReferrer} = NativeModules;
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
-// const WEB_URL = 'https://mynafe.vercel.app';
-const WEB_URL = 'https://mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app';
+const WEB_URL = 'https://mynafe.vercel.app';
 
 export interface onMessagePayload {
   type?: string;
@@ -129,23 +128,28 @@ const App = () => {
 
         case 'GET_STORED_PROGRAM':
           const storedProgramData = await getStoredProgram();
-          webRef?.current?.postMessage(JSON.stringify({
-            type: 'STORED_PROGRAM_RESPONSE',
-            payload: storedProgramData
-          }));
+          webRef?.current?.postMessage(
+            JSON.stringify({
+              type: 'STORED_PROGRAM_RESPONSE',
+              payload: storedProgramData,
+            }),
+          );
           return;
 
         case 'SHARE_REFERRAL':
-          const { shareMessage, signupUrl } = data.payload || {};
+          const {shareMessage, signupUrl} = data.payload || {};
           if (shareMessage && signupUrl) {
             try {
-              await Share.share({
-                message: shareMessage,
-                url: signupUrl,
-                title: 'Share Myna App'
-              }, {
-                dialogTitle: 'Share via'
-              });
+              await Share.share(
+                {
+                  message: shareMessage,
+                  url: signupUrl,
+                  title: 'Share Myna App',
+                },
+                {
+                  dialogTitle: 'Share via',
+                },
+              );
             } catch (error) {
               console.error('Error sharing referral: 123', error);
               crashlytics().recordError(error as Error);
