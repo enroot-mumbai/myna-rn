@@ -1,6 +1,7 @@
 import messaging from '@react-native-firebase/messaging';
 import axios from 'axios';
-import React, {useEffect, useState} from 'react';
+import * as React from 'react';
+import {useEffect, useState, useRef} from 'react';
 import {
   Alert,
   BackHandler,
@@ -17,10 +18,17 @@ import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
 import crashlytics from '@react-native-firebase/crashlytics';
 import store from './src/context/redux/store';
+import {
+  checkStoredReferrer,
+  checkInstallReferrer,
+  handleDeepLink,
+  getStoredProgram,
+} from './src/utils/DeepLinkHandler';
+
+const {InstallReferrer} = NativeModules;
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
-const WEB_URL =
-  'https://mynafe-enroot-mumbai-enroot-mumbais-projects.vercel.app';
+const WEB_URL = 'https://mynafe.vercel.app';
 
 export interface onMessagePayload {
   type?: string;
@@ -39,7 +47,10 @@ const ProviderApp = () => {
 };
 
 const App = () => {
-  const webRef = React.useRef<WebView>(null);
+  const webRef = useRef<WebView>(null);
+  //   console.log("WEB_URL", WEB_URL);
+  const [initialUrl, setInitialUrl] = useState(WEB_URL);
+
   const dispatch = useAppDispatch();
   const [tokenState, setTokenState] = useState('');
   const [fcmTokenState, setFCMTokenState] = useState('');
@@ -106,18 +117,50 @@ const App = () => {
           // Make sure we're setting a string value to the state
           const token = data?.payload?.token || '';
           setTokenState(token);
-          return dispatch(saveToken(token));
+          dispatch(saveToken(token));
+          return;
         case 'LOG_OUT':
           setTokenState('');
           setFCMTokenState('');
           return dispatch(removeToken());
+
+        case 'GET_STORED_PROGRAM':
+          const storedProgramData = await getStoredProgram();
+          webRef?.current?.postMessage(
+            JSON.stringify({
+              type: 'STORED_PROGRAM_RESPONSE',
+              payload: storedProgramData,
+            }),
+          );
+          return;
+
+        case 'SHARE_REFERRAL':
+          const {shareMessage, signupUrl} = data.payload || {};
+          if (shareMessage && signupUrl) {
+            try {
+              await Share.share(
+                {
+                  message: shareMessage,
+                  url: signupUrl,
+                  title: 'Share Myna App',
+                },
+                {
+                  dialogTitle: 'Share via',
+                },
+              );
+            } catch (error) {
+              console.error('Error sharing referral: 123', error);
+              crashlytics().recordError(error as Error);
+            }
+          }
+          return;
 
         default:
           if (payload.nativeEvent.data.startsWith('share:')) {
             const param = JSON.parse(
               payload.nativeEvent.data.replace('share:', ''),
             );
-            handleShare(param);
+            handleShareContent(param);
           }
       }
     } catch (e: any) {
@@ -126,7 +169,7 @@ const App = () => {
     }
   };
 
-  const handleShare = async (param: {
+  const handleShareContent = async (param: {
     title?: string;
     text?: string;
     url?: string;
@@ -146,6 +189,11 @@ const App = () => {
   const INJECTED_JAVASCRIPT = `(function(message) {
     const tokenLocalStorage = window.localStorage.getItem('token');
     window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
+    
+    // Add function to get stored program data
+    window.getStoredProgram = function() {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'GET_STORED_PROGRAM'}));
+    };
   })();`;
 
   const onAndroidBackPress = () => {
@@ -332,6 +380,76 @@ const App = () => {
   // crashlytics enabled
   useEffect(() => {
     crashlytics().setCrashlyticsCollectionEnabled(true);
+  }, []);
+
+  useEffect(() => {
+    const initializeApp = async () => {
+      // Check stored referrer first
+      const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(
+        WEB_URL,
+      );
+      if (hasStoredReferrer && storedUrl) {
+        setInitialUrl(storedUrl);
+        return;
+      }
+
+      // Check for deep links
+      try {
+        const url = await Linking.getInitialURL();
+        if (url) {
+          const deepLinkUrl = handleDeepLink(url, WEB_URL);
+          if (deepLinkUrl) {
+            setInitialUrl(deepLinkUrl);
+          }
+        } else {
+          // Check install referrer if no deep link
+          const {hasReferrer, url: referrerUrl} = await checkInstallReferrer(
+            WEB_URL,
+            InstallReferrer,
+          );
+          if (hasReferrer && referrerUrl) {
+            setInitialUrl(referrerUrl);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error initializing deep links:', error);
+      }
+
+      // Set up URL event listener
+      const subscription = Linking.addEventListener('url', ({url}) => {
+        const deepLinkUrl = handleDeepLink(url, WEB_URL);
+        if (deepLinkUrl) {
+          setInitialUrl(deepLinkUrl);
+        }
+      });
+
+      return () => subscription.remove();
+    };
+
+    initializeApp();
+  }, []);
+
+  // Modify WebView props to handle navigation state changes
+  const handleNavigationStateChange = (navState: any) => {
+    // Check if URL is Play Store
+    if (navState.url.includes('play.google.com')) {
+      Linking.openURL(navState.url);
+      return false; // Prevent WebView from loading Play Store
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    // Debug deep linking
+    Linking.getInitialURL().then(url => {
+      console.log('Initial URL:', url);
+    });
+
+    const subscription = Linking.addEventListener('url', ({url}) => {
+      console.log('URL event received:', url);
+    });
+
+    return () => subscription.remove();
   }, []);
 
   return (
