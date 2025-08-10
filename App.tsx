@@ -8,6 +8,8 @@ import {
   Platform,
   PermissionsAndroid,
   Share,
+  Linking,
+  NativeModules,
 } from 'react-native';
 import PushNotification, {Importance} from 'react-native-push-notification';
 import WebView, {WebViewMessageEvent} from 'react-native-webview';
@@ -290,12 +292,6 @@ const App = () => {
   useEffect(() => {
     if (Platform.OS === 'android') {
       BackHandler.addEventListener('hardwareBackPress', onAndroidBackPress);
-      return () => {
-        BackHandler.removeEventListener(
-          'hardwareBackPress',
-          onAndroidBackPress,
-        );
-      };
     }
   }, []);
 

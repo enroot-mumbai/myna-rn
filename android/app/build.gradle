@@ -119,6 +119,9 @@ dependencies {
     exclude group: "com.android.support"
     }
 
+    // Install Referrer API
+    implementation 'com.android.installreferrer:installreferrer:2.2'
+
 
 
     if (hermesEnabled.toBoolean()) {
