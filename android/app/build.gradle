@@ -112,14 +112,12 @@ android {
 }
 
 dependencies {
-    // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
     implementation(project(":react-native-push-notification")) {
     exclude group: "com.android.support"
     }
 
-    // Install Referrer API
     implementation 'com.android.installreferrer:installreferrer:2.2'
 
 
