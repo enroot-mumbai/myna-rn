@@ -84,8 +84,8 @@ android {
         applicationId "com.mynarnapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 21
-        versionName "1.4.2"
+        versionCode 25
+        versionName "1.4.4"
     }
     signingConfigs {
         debug {
