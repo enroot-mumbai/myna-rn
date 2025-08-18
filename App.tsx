@@ -433,7 +433,7 @@ const App = () => {
       <>
         <WebView
           ref={webRef}
-          source={{uri: WEB_URL}}
+          source={{uri: initialUrl}}
           allowsBackForwardNavigationGestures={true}
           injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
           javaScriptEnabled={true}
