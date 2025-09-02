@@ -298,26 +298,90 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
       return webViewUrl;
     }
 
-    // Handle other web paths (like /learn/physical-health)
+    // Handle other web paths (like /learn/physical-health, /dashboard, etc.)
     if (path && path !== '/' && path !== '') {
-      let webViewUrl = `${WEB_URL}${path.startsWith('/') ? path : '/' + path}`;
-      
-      // Add any query parameters
-      const params = new URLSearchParams();
-      Object.entries(queryParams).forEach(([key, value]) => {
-        params.append(key, value);
-      });
-      
-      if (params.toString()) {
-        webViewUrl += `?${params.toString()}`;
-      }
-      
-      return webViewUrl;
+      return handleRouteUrl(path, WEB_URL, queryParams);
+    }
+
+    // If no specific path, return the base URL
+    if (path === '/' || path === '') {
+      return WEB_URL;
     }
 
     return null;
   } catch (error) {
     console.error('❌ Error handling deep link:', error);
     return null;
+  }
+};
+
+// Handle route URLs (like /learn/physical-health, /dashboard, etc.)
+export const handleRouteUrl = (route: string, WEB_URL: string, queryParams: Record<string, string> = {}): string => {
+  if (!route || route === '/' || route === '') {
+    return WEB_URL;
+  }
+
+  // Ensure route starts with /
+  const cleanRoute = route.startsWith('/') ? route : `/${route}`;
+  let webViewUrl = `${WEB_URL}${cleanRoute}`;
+  
+  // Add any query parameters
+  if (Object.keys(queryParams).length > 0) {
+    const params = new URLSearchParams();
+    Object.entries(queryParams).forEach(([key, value]) => {
+      params.append(key, value);
+    });
+    webViewUrl += `?${params.toString()}`;
+  }
+  
+  return webViewUrl;
+};
+
+// Store notification URL for later use
+export const storeNotificationUrl = async (url: string): Promise<void> => {
+  try {
+    await AsyncStorage.setItem('pending_notification_url', url);
+    await AsyncStorage.setItem('notification_timestamp', Date.now().toString());
+  } catch (error) {
+    console.error('❌ Error storing notification URL:', error);
+  }
+};
+
+// Get stored notification URL
+export const getStoredNotificationUrl = async (): Promise<string | null> => {
+  try {
+    const url = await AsyncStorage.getItem('pending_notification_url');
+    const timestamp = await AsyncStorage.getItem('notification_timestamp');
+    
+    if (url && timestamp) {
+      const urlAge = Date.now() - parseInt(timestamp);
+      const oneHourInMs = 60 * 60 * 1000; // 1 hour
+      
+      if (urlAge < oneHourInMs) {
+        // Clean up old notification data
+        await AsyncStorage.removeItem('pending_notification_url');
+        await AsyncStorage.removeItem('notification_timestamp');
+        return url;
+      } else {
+        // Clean up expired notification data
+        await AsyncStorage.removeItem('pending_notification_url');
+        await AsyncStorage.removeItem('notification_timestamp');
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('❌ Error getting stored notification URL:', error);
+    return null;
+  }
+};
+
+// Clear stored notification URL
+export const clearStoredNotificationUrl = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem('pending_notification_url');
+    await AsyncStorage.removeItem('notification_timestamp');
+  } catch (error) {
+    console.error('❌ Error clearing stored notification URL:', error);
   }
 };

@@ -25,6 +25,9 @@ import {
   checkInstallReferrer,
   handleDeepLink,
   getStoredProgram,
+  storeNotificationUrl,
+  getStoredNotificationUrl,
+  clearStoredNotificationUrl,
 } from './src/utils/DeepLinkHandler';
 
 const {InstallReferrer} = NativeModules;
@@ -60,29 +63,80 @@ const App = () => {
     'fcm_fallback_notification_channel',
   );
   const [userInteraction, setUserInteraction] = useState(false);
+  const [isWebViewReady, setIsWebViewReady] = useState(false);
+  const [pendingNotificationUrl, setPendingNotificationUrl] = useState<string | null>(null);
+
+  const navigateWebView = (url: string) => {
+    if (webRef?.current && isWebViewReady) {
+      webRef?.current?.injectJavaScript(`
+        window.location.href = '${url}';
+      `);
+    } else {
+      setPendingNotificationUrl(url);
+    }
+  };
+
+  // Function to handle notification URLs
+  const handleNotificationUrl = async (url: string | null) => {
+    if (!url) return;
+    
+    // Store the notification URL for persistence
+    await storeNotificationUrl(url);
+    
+    // If it's a route URL (like /learn/physical-health), handle it as a deep link
+    if (url.startsWith('/') || !url.startsWith('http')) {
+      const deepLinkUrl = handleDeepLink(url, WEB_URL);
+      if (deepLinkUrl) {
+        navigateWebView(deepLinkUrl);
+        return;
+      }
+    }
+    
+    // If it's a full URL, check if it's our domain
+    if (url.startsWith('http')) {
+      if (url.includes('mynafe.vercel.app') || url.includes('localhost')) {
+        // It's our domain, navigate to it
+        navigateWebView(url);
+        return;
+      } else {
+        // External URL, open in external browser
+        Linking.openURL(url);
+        return;
+      }
+    }
+    
+    // Default: treat as route and append to base URL
+    const fullUrl = url.startsWith('/') ? `${WEB_URL}${url}` : `${WEB_URL}/${url}`;
+    navigateWebView(fullUrl);
+  };
+
+  // Helper function to extract URL from notification data
+  const extractNotificationUrl = (notification: any): string | null => {
+    if (typeof notification?.data?.url === 'string') {
+      return notification.data.url;
+    }
+    if (typeof (notification as any)?.userInfo?.url === 'string') {
+      return (notification as any).userInfo.url;
+    }
+    return null;
+  };
 
   PushNotification.configure({
     // (optional) Called when Token is generated (iOS and Android)
-    onRegister: function (token) {
-      console.log('TOKEN:', token);
-    },
+    onRegister: function (_token) {},
 
     // (required) Called when a remote is received or opened, or local notification is opened
     onNotification: function (notification) {
-      console.log('NOTIFICATION:', notification);
       setUserInteraction(notification.userInteraction);
       if (notification.userInteraction) {
-        const url = notification.data?.url;
+        const url = extractNotificationUrl(notification);
         if (url) {
-          webRef?.current?.injectJavaScript(`
-          window.location.href = '${url}';
-        `);
+          handleNotificationUrl(url);
         }
       }
     },
     onAction: function (notification) {
-      console.log('ACTION:', notification.action);
-      console.log('NOTIFICATION:', notification);
+      // no-op
     },
     onRegistrationError: function (err) {
       console.error(err.message, err);
@@ -104,7 +158,7 @@ const App = () => {
         data?.payload?.token !== null &&
         data?.payload?.token !== undefined;
 
-      console.log('data', data);
+      
 
       switch (data?.type) {
         case 'LOG_IN':
@@ -114,12 +168,15 @@ const App = () => {
             setFCMTokenState('');
             return;
           }
-          console.log('data?.payload?.token', data?.payload?.token);
+          
 
           // Make sure we're setting a string value to the state
           const token = data?.payload?.token || '';
           setTokenState(token);
           dispatch(saveToken(token));
+          
+          // Clear any stored notification URLs after successful login
+          await clearStoredNotificationUrl();
           return;
         case 'LOG_OUT':
           setTokenState('');
@@ -166,7 +223,6 @@ const App = () => {
           }
       }
     } catch (e: any) {
-      console.log(e);
       crashlytics().recordError(e);
     }
   };
@@ -209,7 +265,6 @@ const App = () => {
   // updates the FCM token in the user profile
   const updateUserProfile = async (token: string): Promise<void> => {
     try {
-      console.log('token', token);
       const res = await axios.put(
         `${API_URL}/user/update`,
         {deviceToken: token},
@@ -220,10 +275,8 @@ const App = () => {
         },
       );
       setFCMTokenState(token || '');
-      console.log('token', token);
     } catch (error) {
       setFCMTokenState('');
-      console.log('error', error);
     }
   };
 
@@ -236,7 +289,6 @@ const App = () => {
       .getToken()
       .then(async token => {
         if (token) {
-          console.log('FCM Token:', token);
           updateUserProfile(token);
         } else {
           console.log('No FCM token available');
@@ -262,7 +314,6 @@ const App = () => {
       },
       () => {
         PushNotification.getChannels(channelIds => {
-          console.log(channelIds);
           setChannelId(channelIds[0]);
         });
       },
@@ -317,12 +368,14 @@ const App = () => {
         vibrate: true,
         vibration: 300,
         actions: ['yes', 'no'],
+        // carry through URL so onNotification tap has access
+        userInfo: {url: remoteMessage?.data?.url},
       });
     });
 
     // Listen for notifications when the app is in the background or terminated
     messaging().setBackgroundMessageHandler(async remoteMessage => {
-      console.log('A new background notification arrived:', remoteMessage);
+      
 
       // Safely access notification properties with proper null checks
       const notificationTitle =
@@ -342,6 +395,7 @@ const App = () => {
         vibrate: true,
         vibration: 300,
         actions: ['yes', 'no'],
+        userInfo: {url: remoteMessage?.data?.url},
       });
     });
   }, []);
@@ -349,22 +403,46 @@ const App = () => {
   useEffect(() => {
     const notificationListener = async () => {
       await messaging().onNotificationOpenedApp(remoteMessage => {
-        console.log(
-          'Notification caused app to open from background state:',
-          remoteMessage.data,
-        );
+        
+        const openedUrl = remoteMessage?.data?.url;
+        if (openedUrl && typeof openedUrl === 'string') {
+          handleNotificationUrl(openedUrl);
+        }
       });
 
       const initialNoti = await messaging().getInitialNotification();
       if (initialNoti) {
-        console.log(
-          'Notification caused app to open from quit state:',
-          initialNoti.data,
-        );
+        const initialUrlFromNoti = initialNoti?.data?.url;
+        if (initialUrlFromNoti && typeof initialUrlFromNoti === 'string') {
+          // Store the notification URL to apply after WebView is ready
+          setPendingNotificationUrl(initialUrlFromNoti);
+        }
       }
     };
     notificationListener();
   }, []);
+
+  // Apply pending notification URL when WebView is ready
+  useEffect(() => {
+    if (isWebViewReady && pendingNotificationUrl) {
+      handleNotificationUrl(pendingNotificationUrl);
+      setPendingNotificationUrl(null);
+    }
+  }, [isWebViewReady, pendingNotificationUrl]);
+
+  // Check for stored notification URLs when WebView is ready
+  useEffect(() => {
+    if (isWebViewReady) {
+      const checkStoredNotifications = async () => {
+        const storedUrl = await getStoredNotificationUrl();
+        if (storedUrl) {
+          handleNotificationUrl(storedUrl);
+        }
+      };
+      
+      checkStoredNotifications();
+    }
+  }, [isWebViewReady]);
 
   useEffect(() => {
     if (tokenState) {
@@ -479,6 +557,7 @@ const App = () => {
             const {nativeEvent} = syntheticEvent;
             console.log('Loading URL:', nativeEvent.url);
           }}
+          onLoad={() => setIsWebViewReady(true)}
         />
       </>
     </SafeAreaProvider>
