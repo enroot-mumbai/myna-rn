@@ -20,6 +20,7 @@ import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
 import crashlytics from '@react-native-firebase/crashlytics';
 import store from './src/context/redux/store';
+import { WEB_URL, WEB_HOST } from './src/utils/config';
 import {
   checkStoredReferrer,
   checkInstallReferrer,
@@ -28,12 +29,13 @@ import {
   storeNotificationUrl,
   getStoredNotificationUrl,
   clearStoredNotificationUrl,
+  checkPendingNotification,
+  clearReferrerData,
 } from './src/utils/DeepLinkHandler';
 
 const {InstallReferrer} = NativeModules;
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
-const WEB_URL = 'https://mynafe.vercel.app';
 
 export interface onMessagePayload {
   type?: string;
@@ -94,7 +96,7 @@ const App = () => {
     
     // If it's a full URL, check if it's our domain
     if (url.startsWith('http')) {
-      if (url.includes('mynafe.vercel.app') || url.includes('localhost')) {
+      if (url.includes(WEB_HOST) || url.includes('localhost')) {
         // It's our domain, navigate to it
         navigateWebView(url);
         return;
@@ -212,6 +214,11 @@ const App = () => {
               crashlytics().recordError(error as Error);
             }
           }
+          return;
+
+        case 'CLEAR_REFERRER_DATA':
+          // Clear referrer data after successful signup
+          await clearReferrerData();
           return;
 
         default:
@@ -458,35 +465,45 @@ const App = () => {
 
   useEffect(() => {
     const initializeApp = async () => {
-      // Check stored referrer first
-      const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(
-        WEB_URL,
-      );
-      if (hasStoredReferrer && storedUrl) {
-        setInitialUrl(storedUrl);
+      // Priority 1: Check for pending notification URLs (highest priority)
+      const {hasNotification, url: notificationUrl} = await checkPendingNotification(WEB_URL);
+      if (hasNotification && notificationUrl) {
+        setInitialUrl(notificationUrl);
         return;
       }
 
-      // Check for deep links
+      // Priority 2: Check for deep links
       try {
         const url = await Linking.getInitialURL();
         if (url) {
           const deepLinkUrl = handleDeepLink(url, WEB_URL);
           if (deepLinkUrl) {
             setInitialUrl(deepLinkUrl);
-          }
-        } else {
-          // Check install referrer if no deep link
-          const {hasReferrer, url: referrerUrl} = await checkInstallReferrer(
-            WEB_URL,
-            InstallReferrer,
-          );
-          if (hasReferrer && referrerUrl) {
-            setInitialUrl(referrerUrl);
+            return;
           }
         }
       } catch (error) {
         console.error('❌ Error initializing deep links:', error);
+      }
+
+      // Priority 3: Check stored referrer (only if no notification or deep link)
+      const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(WEB_URL);
+      if (hasStoredReferrer && storedUrl) {
+        setInitialUrl(storedUrl);
+        return;
+      }
+
+      // Priority 4: Check install referrer (lowest priority)
+      try {
+        const {hasReferrer, url: referrerUrl} = await checkInstallReferrer(
+          WEB_URL,
+          InstallReferrer,
+        );
+        if (hasReferrer && referrerUrl) {
+          setInitialUrl(referrerUrl);
+        }
+      } catch (error) {
+        console.error('❌ Error checking install referrer:', error);
       }
 
       // Set up URL event listener

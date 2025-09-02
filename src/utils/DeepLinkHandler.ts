@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { WEB_HOST } from './config';
 
 // Parse query string into key-value pairs
 export const parseQueryString = (
@@ -247,7 +248,7 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
 
               if (url.startsWith('http://') || url.startsWith('https://')) {
           // Check if it's any of our supported domains
-          if (url.includes('mynafe.vercel.app') || 
+          if (url.includes(WEB_HOST) || 
               url.includes('localhost') || 
               url.includes('mynafe-git-feature-languagesuppo-df59ca-enroot-mumbais-projects.vercel.app')) {
             const urlObj = new URL(url);
@@ -383,5 +384,59 @@ export const clearStoredNotificationUrl = async (): Promise<void> => {
     await AsyncStorage.removeItem('notification_timestamp');
   } catch (error) {
     console.error('❌ Error clearing stored notification URL:', error);
+  }
+};
+
+// Clear all referrer data (call this after successful signup)
+export const clearReferrerData = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem('referrer_program');
+    await AsyncStorage.removeItem('referrer_route');
+    await AsyncStorage.removeItem('referrer_language');
+    await AsyncStorage.removeItem('referrer_ref');
+    await AsyncStorage.removeItem('referrer_timestamp');
+    console.log('✅ Referrer data cleared after successful signup');
+  } catch (error) {
+    console.error('❌ Error clearing referrer data:', error);
+  }
+};
+
+// Check for pending notification URL (highest priority)
+export const checkPendingNotification = async (
+  WEB_URL: string,
+): Promise<{hasNotification: boolean; url?: string}> => {
+  try {
+    const notificationUrl = await getStoredNotificationUrl();
+    if (notificationUrl) {
+      // Clear the stored notification URL since we're using it
+      await clearStoredNotificationUrl();
+      
+      // Handle the notification URL as a deep link
+      const deepLinkUrl = handleDeepLink(notificationUrl, WEB_URL);
+      if (deepLinkUrl) {
+        return {hasNotification: true, url: deepLinkUrl};
+      }
+      
+      // If it's a full URL, check if it's our domain
+      if (notificationUrl.startsWith('http')) {
+        if (notificationUrl.includes(WEB_HOST) || notificationUrl.includes('localhost')) {
+          return {hasNotification: true, url: notificationUrl};
+        } else {
+          // External URL, open in external browser
+          const { Linking } = require('react-native');
+          Linking.openURL(notificationUrl);
+          return {hasNotification: false};
+        }
+      }
+      
+      // Default: treat as route and append to base URL
+      const fullUrl = notificationUrl.startsWith('/') ? `${WEB_URL}${notificationUrl}` : `${WEB_URL}/${notificationUrl}`;
+      return {hasNotification: true, url: fullUrl};
+    }
+    
+    return {hasNotification: false};
+  } catch (error) {
+    console.error('❌ Error checking pending notification:', error);
+    return {hasNotification: false};
   }
 };
