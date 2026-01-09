@@ -29,8 +29,8 @@ import {
 
 const {InstallReferrer} = NativeModules;
 
-const API_URL = 'https://myna-prod.enrootmumbai.in';
-const WEB_URL = 'https://mynafe.vercel.app';
+const API_URL = 'https://myna-stg.enrootmumbai.in';
+const WEB_URL = 'https://test-mynafe.vercel.app';
 
 export interface onMessagePayload {
   type?: string;
