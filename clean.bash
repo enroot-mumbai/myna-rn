@@ -3,7 +3,7 @@ echo "Cleaning node_modules... "
 rm -rf node_modules
 echo "Removed node_modules"
 echo "Cleaning android build... "
-rm -rf android/build android/app/build
+rm -rf android/build android/app/build android/app/.cxx android/.gradle
 echo "Removed android build"
 echo "Cleaning tmp... "
 rm -rf /tmp/metro-* /tmp/haste-map-*

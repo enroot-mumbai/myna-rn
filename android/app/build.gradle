@@ -84,8 +84,8 @@ android {
         applicationId "com.mynarnapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 32
-        versionName "1.5.1"
+        versionCode 33
+        versionName "1.5.2"
     }
     signingConfigs {
         debug {
@@ -110,6 +110,15 @@ android {
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+// New Architecture: gradlew clean runs externalNativeBuildClean which re-configures CMake.
+// That fails when codegen jni dirs in node_modules were already removed (intermittent).
+tasks.matching { it.name.startsWith("externalNativeBuildClean") }.configureEach { task ->
+    task.actions.clear()
+    task.doLast {
+        delete file("${projectDir}/.cxx")
     }
 }
 

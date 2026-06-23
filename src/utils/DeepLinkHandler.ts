@@ -65,6 +65,71 @@ const buildUrlWithLanguage = (baseUrl: string, language?: string): string => {
   return `${baseUrl}${separator}language=${encodeURIComponent(language)}`;
 };
 
+export const getWelcomeUrl = (WEB_URL: string): string => `${WEB_URL}/welcome`;
+
+export const storeReferrerParams = async (params: {
+  program?: string;
+  route?: string;
+  language?: string;
+  ref?: string;
+}): Promise<void> => {
+  try {
+    if (params.program) {
+      await AsyncStorage.setItem('referrer_program', params.program);
+    }
+    if (params.route) {
+      await AsyncStorage.setItem('referrer_route', params.route);
+    }
+    if (params.language) {
+      await AsyncStorage.setItem('referrer_language', params.language);
+    }
+    if (params.ref) {
+      await AsyncStorage.setItem('referrer_ref', params.ref);
+    }
+    await AsyncStorage.setItem('referrer_timestamp', Date.now().toString());
+  } catch (error) {
+    console.error('❌ Error storing referrer params:', error);
+  }
+};
+
+export const buildSignupUrl = (
+  WEB_URL: string,
+  params: {program?: string; language?: string; ref?: string} = {},
+): string => {
+  let webViewUrl = `${WEB_URL}/signup`;
+
+  if (params.program) {
+    webViewUrl += `?program=${encodeURIComponent(params.program)}`;
+  }
+
+  webViewUrl = buildUrlWithLanguage(webViewUrl, params.language);
+
+  if (params.ref) {
+    const separator = webViewUrl.includes('?') ? '&' : '?';
+    webViewUrl += `${separator}ref=${encodeURIComponent(params.ref)}`;
+  }
+
+  return webViewUrl;
+};
+
+const resolveSignupDestination = async (
+  WEB_URL: string,
+  params: {program?: string; language?: string; ref?: string},
+): Promise<string> => {
+  const isLoggedIn = await isUserLoggedIn();
+  const firstLaunch = await isFirstLaunch();
+
+  if (!isLoggedIn && firstLaunch) {
+    return getWelcomeUrl(WEB_URL);
+  }
+
+  if (!isLoggedIn) {
+    return buildSignupUrl(WEB_URL, params);
+  }
+
+  return WEB_URL;
+};
+
 // Check for stored referrer data
 export const checkStoredReferrer = async (
   WEB_URL: string,
@@ -81,32 +146,19 @@ export const checkStoredReferrer = async (
       const ninetyDaysInMs = 90 * 24 * 60 * 60 * 1000;
 
       if (referrerAge < ninetyDaysInMs) {
-        // Check if user is logged in and if this is first launch
         const isLoggedIn = await isUserLoggedIn();
-        const firstLaunch = await isFirstLaunch();
 
-        // Only redirect to signup if it's first launch or user is not logged in
-        if ((storedRoute === 'signup' || storedRoute === '/signup') && (!isLoggedIn || firstLaunch)) {
-          let webViewUrl = `${WEB_URL}/signup`;
-          
-          // Add program parameter if stored
-          if (storedProgram) {
-            webViewUrl += `?program=${encodeURIComponent(storedProgram)}`;
-          }
-          
-          webViewUrl = buildUrlWithLanguage(webViewUrl, storedLanguage || undefined);
-          
-          // Add ref parameter if stored
-          if (storedRef) {
-            const separator = webViewUrl.includes('?') ? '&' : '?';
-            webViewUrl += `${separator}ref=${encodeURIComponent(storedRef)}`;
-          }
-          
-          // Mark app as launched after first signup redirect
-          if (firstLaunch) {
-            await markAppAsLaunched();
-          }
-          
+        // Redirect new users through welcome first; returning guests go to signup
+        if (
+          (storedRoute === 'signup' || storedRoute === '/signup') &&
+          !isLoggedIn
+        ) {
+          const webViewUrl = await resolveSignupDestination(WEB_URL, {
+            program: storedProgram || undefined,
+            language: storedLanguage || undefined,
+            ref: storedRef || undefined,
+          });
+
           return {hasStoredReferrer: true, url: webViewUrl};
         }
       } else {
@@ -190,32 +242,16 @@ export const checkInstallReferrer = async (
 
       await AsyncStorage.setItem('referrer_timestamp', Date.now().toString());
 
-      // Check if user is logged in and if this is first launch
       const isLoggedIn = await isUserLoggedIn();
-      const firstLaunch = await isFirstLaunch();
 
-      // Only redirect to signup if it's first launch or user is not logged in
-      if ((route === 'signup' || route === '/signup') && (!isLoggedIn || firstLaunch)) {
-        let webViewUrl = `${WEB_URL}/signup`;
-        
-        // Add program parameter if present
-        if (program) {
-          webViewUrl += `?program=${encodeURIComponent(program)}`;
-        }
-        
-        webViewUrl = buildUrlWithLanguage(webViewUrl, language);
-        
-        // Add ref parameter if present
-        if (ref) {
-          const separator = webViewUrl.includes('?') ? '&' : '?';
-          webViewUrl += `${separator}ref=${encodeURIComponent(ref)}`;
-        }
-        
-        // Mark app as launched after first signup redirect
-        if (firstLaunch) {
-          await markAppAsLaunched();
-        }
-        
+      // Redirect new users through welcome first; returning guests go to signup
+      if ((route === 'signup' || route === '/signup') && !isLoggedIn) {
+        const webViewUrl = await resolveSignupDestination(WEB_URL, {
+          program: program || undefined,
+          language: language || undefined,
+          ref: ref || undefined,
+        });
+
         return {hasReferrer: true, url: webViewUrl};
       }
     }
@@ -277,26 +313,12 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
 
     // Handle various paths
     if (path === 'signup' || path === '/signup') {
-      let webViewUrl = `${WEB_URL}/signup`;
-      
-      // Add program parameter if present
-      if (queryParams['program']) {
-        webViewUrl += `?program=${encodeURIComponent(queryParams['program'])}`;
-      }
-      
-      // Add language parameter if present
-      if (queryParams['language'] || queryParams['lang']) {
-        const language = queryParams['language'] || queryParams['lang'];
-        webViewUrl = buildUrlWithLanguage(webViewUrl, language);
-      }
-      
-      // Add ref parameter if present
-      if (queryParams['ref']) {
-        const separator = webViewUrl.includes('?') ? '&' : '?';
-        webViewUrl += `${separator}ref=${encodeURIComponent(queryParams['ref'])}`;
-      }
-      
-      return webViewUrl;
+      const language = queryParams['language'] || queryParams['lang'];
+      return buildSignupUrl(WEB_URL, {
+        program: queryParams['program'],
+        language,
+        ref: queryParams['ref'],
+      });
     }
 
     // Handle other web paths (like /learn/physical-health, /dashboard, etc.)
@@ -401,6 +423,49 @@ export const clearReferrerData = async (): Promise<void> => {
   }
 };
 
+// Resolve deep link URL with welcome-first flow for new users
+export const resolveDeepLinkUrl = async (
+  url: string,
+  WEB_URL: string,
+): Promise<string | null> => {
+  const resolvedUrl = handleDeepLink(url, WEB_URL);
+  if (!resolvedUrl) return null;
+
+  if (resolvedUrl.includes('/signup')) {
+    try {
+      const urlObj = new URL(resolvedUrl);
+      await storeReferrerParams({
+        program: urlObj.searchParams.get('program') || undefined,
+        route: 'signup',
+        language: urlObj.searchParams.get('language') || undefined,
+        ref: urlObj.searchParams.get('ref') || undefined,
+      });
+
+      return resolveSignupDestination(WEB_URL, {
+        program: urlObj.searchParams.get('program') || undefined,
+        language: urlObj.searchParams.get('language') || undefined,
+        ref: urlObj.searchParams.get('ref') || undefined,
+      });
+    } catch (error) {
+      console.error('❌ Error resolving signup deep link:', error);
+    }
+  }
+
+  return resolvedUrl;
+};
+
+// Get initial app URL for first-time users without referral data
+export const getInitialAppUrl = async (WEB_URL: string): Promise<string> => {
+  const isLoggedIn = await isUserLoggedIn();
+  const firstLaunch = await isFirstLaunch();
+
+  if (!isLoggedIn && firstLaunch) {
+    return getWelcomeUrl(WEB_URL);
+  }
+
+  return WEB_URL;
+};
+
 // Check for pending notification URL (highest priority)
 export const checkPendingNotification = async (
   WEB_URL: string,
@@ -412,7 +477,7 @@ export const checkPendingNotification = async (
       await clearStoredNotificationUrl();
       
       // Handle the notification URL as a deep link
-      const deepLinkUrl = handleDeepLink(notificationUrl, WEB_URL);
+      const deepLinkUrl = await resolveDeepLinkUrl(notificationUrl, WEB_URL);
       if (deepLinkUrl) {
         return {hasNotification: true, url: deepLinkUrl};
       }

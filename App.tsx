@@ -13,6 +13,11 @@ import {
 } from 'react-native';
 import PushNotification, {Importance} from 'react-native-push-notification';
 import WebView, {WebViewMessageEvent} from 'react-native-webview';
+import {
+  SafeAreaProvider as SafeAreaContextProvider,
+  initialWindowMetrics,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {Provider} from 'react-redux';
 import {SimpleLoader} from './src/components/Loader';
 import SafeAreaProvider from './src/components/SafeAreaProvider';
@@ -25,17 +30,21 @@ import {
   checkStoredReferrer,
   checkInstallReferrer,
   handleDeepLink,
+  resolveDeepLinkUrl,
+  getInitialAppUrl,
   getStoredProgram,
   storeNotificationUrl,
   getStoredNotificationUrl,
   clearStoredNotificationUrl,
   checkPendingNotification,
   clearReferrerData,
+  markAppAsLaunched,
 } from './src/utils/DeepLinkHandler';
 
 const {InstallReferrer} = NativeModules;
 
-const API_URL = 'https://myna-prod.enrootmumbai.in';
+// const API_URL = 'https://myna-prod.enrootmumbai.in';
+const API_URL = 'https://myna-stg.enrootmumbai.in';
 
 export interface onMessagePayload {
   type?: string;
@@ -48,13 +57,16 @@ export interface onMessagePayload {
 const ProviderApp = () => {
   return (
     <Provider store={store}>
-      <App />
+      <SafeAreaContextProvider initialMetrics={initialWindowMetrics}>
+        <App />
+      </SafeAreaContextProvider>
     </Provider>
   );
 };
 
 const App = () => {
   const webRef = useRef<WebView>(null);
+  const insets = useSafeAreaInsets();
   //   console.log("WEB_URL", WEB_URL);
   const [initialUrl, setInitialUrl] = useState(WEB_URL);
 
@@ -210,7 +222,6 @@ const App = () => {
                 },
               );
             } catch (error) {
-              console.error('Error sharing referral: 123', error);
               crashlytics().recordError(error as Error);
             }
           }
@@ -219,6 +230,10 @@ const App = () => {
         case 'CLEAR_REFERRER_DATA':
           // Clear referrer data after successful signup
           await clearReferrerData();
+          return;
+
+        case 'MARK_WELCOME_COMPLETE':
+          await markAppAsLaunched();
           return;
 
         default:
@@ -476,7 +491,7 @@ const App = () => {
       try {
         const url = await Linking.getInitialURL();
         if (url) {
-          const deepLinkUrl = handleDeepLink(url, WEB_URL);
+          const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL);
           if (deepLinkUrl) {
             setInitialUrl(deepLinkUrl);
             return;
@@ -501,14 +516,19 @@ const App = () => {
         );
         if (hasReferrer && referrerUrl) {
           setInitialUrl(referrerUrl);
+          return;
         }
       } catch (error) {
         console.error('❌ Error checking install referrer:', error);
       }
 
+      // Priority 5: First-time users without referral data see welcome
+      const initialAppUrl = await getInitialAppUrl(WEB_URL);
+      setInitialUrl(initialAppUrl);
+
       // Set up URL event listener
-      const subscription = Linking.addEventListener('url', ({url}) => {
-        const deepLinkUrl = handleDeepLink(url, WEB_URL);
+      const subscription = Linking.addEventListener('url', async ({url}) => {
+        const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL);
         if (deepLinkUrl) {
           setInitialUrl(deepLinkUrl);
         }
@@ -530,8 +550,25 @@ const App = () => {
     return true;
   };
 
+  const injectSafeAreaInsets = () => {
+    webRef?.current?.injectJavaScript(`
+      (function() {
+        var root = document.documentElement;
+        root.style.setProperty('--safe-area-inset-top', '${insets.top}px');
+        root.style.setProperty('--safe-area-inset-bottom', '${insets.bottom}px');
+        root.setAttribute('data-native-app', 'true');
+      })();
+      true;
+    `);
+  };
+
   useEffect(() => {
-    // Debug deep linking
+    if (isWebViewReady) {
+      injectSafeAreaInsets();
+    }
+  }, [isWebViewReady, insets.top, insets.bottom]);
+
+  useEffect(() => {
     Linking.getInitialURL().then(url => {
       console.log('Initial URL:', url);
     });
@@ -549,6 +586,7 @@ const App = () => {
         <WebView
           ref={webRef}
           source={{uri: initialUrl}}
+          style={{flex: 1}}
           allowsBackForwardNavigationGestures={true}
           injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
           javaScriptEnabled={true}
@@ -574,7 +612,10 @@ const App = () => {
             const {nativeEvent} = syntheticEvent;
             console.log('Loading URL:', nativeEvent.url);
           }}
-          onLoad={() => setIsWebViewReady(true)}
+          onLoad={() => {
+            setIsWebViewReady(true);
+            injectSafeAreaInsets();
+          }}
         />
       </>
     </SafeAreaProvider>
