@@ -8,7 +8,8 @@
     "start": "react-native start",
     "test": "jest",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
-    "clean": "bash clean.bash"
+    "clean": "bash clean.bash",
+    "release:android": "bash release-android.bash"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.24.0",

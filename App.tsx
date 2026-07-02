@@ -43,8 +43,8 @@ import {
 
 const {InstallReferrer} = NativeModules;
 
-// const API_URL = 'https://myna-prod.enrootmumbai.in';
-const API_URL = 'https://myna-stg.enrootmumbai.in';
+const API_URL = 'https://myna-prod.enrootmumbai.in';
+// const API_URL = 'https://myna-stg.enrootmumbai.in';
 
 export interface onMessagePayload {
   type?: string;
