@@ -73,3 +73,17 @@ yarn-error.log
 !.yarn/sdks
 !.yarn/versions
 .kotlin/
+
+
+# Xcode test artifacts
+*.xctestproducts
+**/*.xctestproducts/
+**/mynaRnApp_*.xctestproducts/
+
+# Xcode build output
+DerivedData/
+build/
+*.app
+*.dSYM
+*.xcarchive
+**/*.framework/

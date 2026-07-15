@@ -1,7 +1,7 @@
 import messaging from '@react-native-firebase/messaging';
 import axios from 'axios';
 import * as React from 'react';
-import {useEffect, useState, useRef} from 'react';
+import {useEffect, useState, useRef, useMemo} from 'react';
 import {
   Alert,
   BackHandler,
@@ -12,6 +12,7 @@ import {
   NativeModules,
 } from 'react-native';
 import PushNotification, {Importance} from 'react-native-push-notification';
+import BootSplash from 'react-native-bootsplash';
 import WebView, {WebViewMessageEvent} from 'react-native-webview';
 import {Provider} from 'react-redux';
 import {SimpleLoader} from './src/components/Loader';
@@ -26,11 +27,30 @@ import {
   handleDeepLink,
   getStoredProgram,
 } from './src/utils/DeepLinkHandler';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const {InstallReferrer} = NativeModules;
 
 const API_URL = 'https://myna-stg.enrootmumbai.in';
 const WEB_URL = 'https://test-mynafe.vercel.app';
+
+const SYNC_TOKEN_JS = `
+(function() {
+  try {
+    var token = window.localStorage.getItem('token');
+    if (token) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:token}}));
+    }
+  } catch (e) {}
+})();
+true;
+`;
+
+const INJECTED_JAVASCRIPT = `(function() {
+  window.getStoredProgram = function() {
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'GET_STORED_PROGRAM'}));
+  };
+})();`;
 
 export interface onMessagePayload {
   type?: string;
@@ -50,51 +70,87 @@ const ProviderApp = () => {
 
 const App = () => {
   const webRef = useRef<WebView>(null);
+  const bootSplashHidden = useRef(false);
   //   console.log("WEB_URL", WEB_URL);
   const [initialUrl, setInitialUrl] = useState(WEB_URL);
+  const webViewSource = useMemo(() => ({uri: initialUrl}), [initialUrl]);
 
   const dispatch = useAppDispatch();
   const [tokenState, setTokenState] = useState('');
   const [fcmTokenState, setFCMTokenState] = useState('');
+
+  // Load token from AsyncStorage on startup
+  useEffect(() => {
+    const loadSavedToken = async () => {
+      try {
+        const savedToken = await AsyncStorage.getItem('token');
+        if (savedToken) {
+          setTokenState(savedToken);
+          dispatch(saveToken(savedToken));
+        }
+      } catch (error) {
+        console.error('❌ Error loading saved token:', error);
+      }
+    };
+    loadSavedToken();
+  }, []);
+
+  const injectedJs = useMemo(() => {
+    let js = INJECTED_JAVASCRIPT;
+    if (tokenState) {
+      js = `
+        (function() {
+          try {
+            window.localStorage.setItem('token', '${tokenState}');
+          } catch (e) {}
+        })();
+        ${js}
+      `;
+    }
+    return js;
+  }, [tokenState]);
   const [channelId, setChannelId] = useState(
     'fcm_fallback_notification_channel',
   );
   const [userInteraction, setUserInteraction] = useState(false);
 
-  PushNotification.configure({
-    // (optional) Called when Token is generated (iOS and Android)
-    onRegister: function (token) {
-      console.log('TOKEN:', token);
-    },
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
 
-    // (required) Called when a remote is received or opened, or local notification is opened
-    onNotification: function (notification) {
-      console.log('NOTIFICATION:', notification);
-      setUserInteraction(notification.userInteraction);
-      if (notification.userInteraction) {
-        const url = notification.data?.url;
-        if (url) {
-          webRef?.current?.injectJavaScript(`
+    PushNotification.configure({
+      onRegister: function (token) {
+        console.log('TOKEN:', token);
+      },
+      onNotification: function (notification) {
+        console.log('NOTIFICATION:', notification);
+        setUserInteraction(notification.userInteraction);
+        if (notification.userInteraction) {
+          const url = notification.data?.url;
+          if (url) {
+            webRef?.current?.injectJavaScript(`
           window.location.href = '${url}';
         `);
+          }
         }
-      }
-    },
-    onAction: function (notification) {
-      console.log('ACTION:', notification.action);
-      console.log('NOTIFICATION:', notification);
-    },
-    onRegistrationError: function (err) {
-      console.error(err.message, err);
-    },
-    permissions: {
-      alert: true,
-      badge: true,
-      sound: true,
-    },
-    popInitialNotification: true,
-    requestPermissions: true,
-  });
+      },
+      onAction: function (notification) {
+        console.log('ACTION:', notification.action);
+        console.log('NOTIFICATION:', notification);
+      },
+      onRegistrationError: function (err) {
+        console.error(err.message, err);
+      },
+      permissions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+      popInitialNotification: true,
+      requestPermissions: true,
+    });
+  }, []);
 
   const onMessage = async (payload: WebViewMessageEvent) => {
     try {
@@ -109,21 +165,22 @@ const App = () => {
       switch (data?.type) {
         case 'LOG_IN':
           if (!isTokenAvailable) {
-            dispatch(removeToken());
-            setTokenState('');
-            setFCMTokenState('');
             return;
           }
           console.log('data?.payload?.token', data?.payload?.token);
 
           // Make sure we're setting a string value to the state
           const token = data?.payload?.token || '';
-          setTokenState(token);
-          dispatch(saveToken(token));
+          if (token !== tokenState) {
+            setTokenState(token);
+            dispatch(saveToken(token));
+            await AsyncStorage.setItem('token', token);
+          }
           return;
         case 'LOG_OUT':
           setTokenState('');
           setFCMTokenState('');
+          await AsyncStorage.removeItem('token');
           return dispatch(removeToken());
 
         case 'GET_STORED_PROGRAM':
@@ -188,16 +245,6 @@ const App = () => {
     }
   };
 
-  const INJECTED_JAVASCRIPT = `(function(message) {
-    const tokenLocalStorage = window.localStorage.getItem('token');
-    window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
-    
-    // Add function to get stored program data
-    window.getStoredProgram = function() {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'GET_STORED_PROGRAM'}));
-    };
-  })();`;
-
   const onAndroidBackPress = () => {
     if (webRef?.current) {
       webRef?.current?.goBack();
@@ -227,29 +274,38 @@ const App = () => {
     }
   };
 
-  const createFCMToken = () => {
-    // Request permission to receive notifications (optional)
-    messaging().requestPermission();
+  const createFCMToken = async () => {
+    try {
+      await messaging().requestPermission();
 
-    // Get the FCM token
-    messaging()
-      .getToken()
-      .then(async token => {
-        if (token) {
-          console.log('FCM Token:', token);
-          updateUserProfile(token);
-        } else {
-          console.log('No FCM token available');
-        }
-      })
-      .catch(error => {
-        console.log('Error getting FCM token:', error);
-        crashlytics().log('Error getting FCM token:');
-        crashlytics().recordError(error);
-      });
+      if (
+        Platform.OS === 'ios' &&
+        !messaging().isDeviceRegisteredForRemoteMessages
+      ) {
+        await messaging().registerDeviceForRemoteMessages();
+      }
+
+      const token = await messaging().getToken();
+      if (token) {
+        console.log('FCM Token:', token);
+        await updateUserProfile(token);
+      } else {
+        console.log('No FCM token available');
+      }
+    } catch (error) {
+      console.log('Error getting FCM token:', error);
+      crashlytics().log('Error getting FCM token:');
+      crashlytics().recordError(
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
   };
 
   const createChannel = () => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
     PushNotification.createChannel(
       {
         channelId: 'channel_1', // (required)
@@ -453,9 +509,10 @@ const App = () => {
       <>
         <WebView
           ref={webRef}
-          source={{uri: initialUrl}}
+          source={webViewSource}
+          onShouldStartLoadWithRequest={handleNavigationStateChange}
           allowsBackForwardNavigationGestures={true}
-          injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
+          injectedJavaScriptBeforeContentLoaded={injectedJs}
           javaScriptEnabled={true}
           onMessage={onMessage}
           originWhitelist={['https://*', 'http://*', 'data:*']}
@@ -478,6 +535,14 @@ const App = () => {
           onLoadStart={syntheticEvent => {
             const {nativeEvent} = syntheticEvent;
             console.log('Loading URL:', nativeEvent.url);
+          }}
+          onLoadEnd={() => {
+            webRef.current?.injectJavaScript(SYNC_TOKEN_JS);
+            if (bootSplashHidden.current) {
+              return;
+            }
+            bootSplashHidden.current = true;
+            BootSplash.hide({fade: true});
           }}
         />
       </>

@@ -158,6 +158,10 @@ export const checkInstallReferrer = async (
   WEB_URL: string,
   InstallReferrer: any,
 ): Promise<{hasReferrer: boolean; url?: string}> => {
+  if (!InstallReferrer?.getReferrer) {
+    return {hasReferrer: false};
+  }
+
   try {
     const referrerDetails = await InstallReferrer.getReferrer();
 
