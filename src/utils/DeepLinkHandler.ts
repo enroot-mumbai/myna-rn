@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WEB_HOST } from './config';
+import {WEB_HOST} from './config';
 
 // Parse query string into key-value pairs
 export const parseQueryString = (
@@ -60,7 +60,7 @@ export const isUserLoggedIn = async (): Promise<boolean> => {
 // Build URL with language parameter
 const buildUrlWithLanguage = (baseUrl: string, language?: string): string => {
   if (!language) return baseUrl;
-  
+
   const separator = baseUrl.includes('?') ? '&' : '?';
   return `${baseUrl}${separator}language=${encodeURIComponent(language)}`;
 };
@@ -179,7 +179,11 @@ export const checkStoredReferrer = async (
 };
 
 // Get stored program for prefilling forms
-export const getStoredProgram = async (): Promise<{program?: string; language?: string; ref?: string}> => {
+export const getStoredProgram = async (): Promise<{
+  program?: string;
+  language?: string;
+  ref?: string;
+}> => {
   try {
     const storedProgram = await AsyncStorage.getItem('referrer_program');
     const storedLanguage = await AsyncStorage.getItem('referrer_language');
@@ -192,9 +196,9 @@ export const getStoredProgram = async (): Promise<{program?: string; language?: 
 
       if (referrerAge < ninetyDaysInMs) {
         return {
-          program: storedProgram || undefined, 
+          program: storedProgram || undefined,
           language: storedLanguage || undefined,
-          ref: storedRef || undefined
+          ref: storedRef || undefined,
         };
       }
     }
@@ -282,26 +286,40 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
     } else {
       let pathname = url;
 
-              if (url.startsWith('http://') || url.startsWith('https://')) {
-          // Check if it's any of our supported domains
-          if (url.includes(WEB_HOST) || 
-              url.includes('localhost') || 
-              url.includes('mynafe-git-feature-languagesuppo-df59ca-enroot-mumbais-projects.vercel.app')) {
-            const urlObj = new URL(url);
-            pathname = urlObj.pathname;
-            // Parse query parameters from web URL
-            for (const [key, value] of urlObj.searchParams.entries()) {
-              queryParams[key] = value;
-            }
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        // Check if it's any of our supported domains
+        if (
+          url.includes(WEB_HOST) ||
+          url.includes('localhost') ||
+          url.includes(
+            'mynafe-git-feature-languagesuppo-df59ca-enroot-mumbais-projects.vercel.app',
+          )
+        ) {
+          const urlWithoutScheme = url.replace(/^https?:\/\//, '');
+          const pathStartIndex = urlWithoutScheme.indexOf('/');
+          const pathAndQuery =
+            pathStartIndex !== -1
+              ? urlWithoutScheme.substring(pathStartIndex)
+              : '/';
+          const queryIndex = pathAndQuery.indexOf('?');
+          pathname =
+            queryIndex !== -1
+              ? pathAndQuery.substring(0, queryIndex)
+              : pathAndQuery;
+          if (queryIndex !== -1) {
+            queryParams = parseQueryString(
+              pathAndQuery.substring(queryIndex + 1),
+            );
+          }
+        } else {
+          const domainEndIndex = url.indexOf('/', url.indexOf('//') + 2);
+          if (domainEndIndex !== -1) {
+            pathname = url.substring(domainEndIndex);
           } else {
-            const domainEndIndex = url.indexOf('/', url.indexOf('//') + 2);
-            if (domainEndIndex !== -1) {
-              pathname = url.substring(domainEndIndex);
-            } else {
-              pathname = '/';
-            }
+            pathname = '/';
           }
         }
+      }
 
       const [pathPart, queryPart] = pathname.split('?');
       path = pathPart;
@@ -339,7 +357,11 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
 };
 
 // Handle route URLs (like /learn/physical-health, /dashboard, etc.)
-export const handleRouteUrl = (route: string, WEB_URL: string, queryParams: Record<string, string> = {}): string => {
+export const handleRouteUrl = (
+  route: string,
+  WEB_URL: string,
+  queryParams: Record<string, string> = {},
+): string => {
   if (!route || route === '/' || route === '') {
     return WEB_URL;
   }
@@ -347,16 +369,16 @@ export const handleRouteUrl = (route: string, WEB_URL: string, queryParams: Reco
   // Ensure route starts with /
   const cleanRoute = route.startsWith('/') ? route : `/${route}`;
   let webViewUrl = `${WEB_URL}${cleanRoute}`;
-  
+
   // Add any query parameters
   if (Object.keys(queryParams).length > 0) {
-    const params = new URLSearchParams();
-    Object.entries(queryParams).forEach(([key, value]) => {
-      params.append(key, value);
-    });
-    webViewUrl += `?${params.toString()}`;
+    const pairs = Object.entries(queryParams).map(
+      ([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+    );
+    webViewUrl += `?${pairs.join('&')}`;
   }
-  
+
   return webViewUrl;
 };
 
@@ -375,11 +397,11 @@ export const getStoredNotificationUrl = async (): Promise<string | null> => {
   try {
     const url = await AsyncStorage.getItem('pending_notification_url');
     const timestamp = await AsyncStorage.getItem('notification_timestamp');
-    
+
     if (url && timestamp) {
       const urlAge = Date.now() - parseInt(timestamp);
       const oneHourInMs = 60 * 60 * 1000; // 1 hour
-      
+
       if (urlAge < oneHourInMs) {
         // Clean up old notification data
         await AsyncStorage.removeItem('pending_notification_url');
@@ -391,7 +413,7 @@ export const getStoredNotificationUrl = async (): Promise<string | null> => {
         await AsyncStorage.removeItem('notification_timestamp');
       }
     }
-    
+
     return null;
   } catch (error) {
     console.error('❌ Error getting stored notification URL:', error);
@@ -433,18 +455,21 @@ export const resolveDeepLinkUrl = async (
 
   if (resolvedUrl.includes('/signup')) {
     try {
-      const urlObj = new URL(resolvedUrl);
+      const queryIndex = resolvedUrl.indexOf('?');
+      const queryPart =
+        queryIndex !== -1 ? resolvedUrl.substring(queryIndex + 1) : '';
+      const queryParams = parseQueryString(queryPart);
       await storeReferrerParams({
-        program: urlObj.searchParams.get('program') || undefined,
+        program: queryParams.program || undefined,
         route: 'signup',
-        language: urlObj.searchParams.get('language') || undefined,
-        ref: urlObj.searchParams.get('ref') || undefined,
+        language: queryParams.language || undefined,
+        ref: queryParams.ref || undefined,
       });
 
       return resolveSignupDestination(WEB_URL, {
-        program: urlObj.searchParams.get('program') || undefined,
-        language: urlObj.searchParams.get('language') || undefined,
-        ref: urlObj.searchParams.get('ref') || undefined,
+        program: queryParams.program || undefined,
+        language: queryParams.language || undefined,
+        ref: queryParams.ref || undefined,
       });
     } catch (error) {
       console.error('❌ Error resolving signup deep link:', error);
@@ -475,30 +500,35 @@ export const checkPendingNotification = async (
     if (notificationUrl) {
       // Clear the stored notification URL since we're using it
       await clearStoredNotificationUrl();
-      
+
       // Handle the notification URL as a deep link
       const deepLinkUrl = await resolveDeepLinkUrl(notificationUrl, WEB_URL);
       if (deepLinkUrl) {
         return {hasNotification: true, url: deepLinkUrl};
       }
-      
+
       // If it's a full URL, check if it's our domain
       if (notificationUrl.startsWith('http')) {
-        if (notificationUrl.includes(WEB_HOST) || notificationUrl.includes('localhost')) {
+        if (
+          notificationUrl.includes(WEB_HOST) ||
+          notificationUrl.includes('localhost')
+        ) {
           return {hasNotification: true, url: notificationUrl};
         } else {
           // External URL, open in external browser
-          const { Linking } = require('react-native');
+          const {Linking} = require('react-native');
           Linking.openURL(notificationUrl);
           return {hasNotification: false};
         }
       }
-      
+
       // Default: treat as route and append to base URL
-      const fullUrl = notificationUrl.startsWith('/') ? `${WEB_URL}${notificationUrl}` : `${WEB_URL}/${notificationUrl}`;
+      const fullUrl = notificationUrl.startsWith('/')
+        ? `${WEB_URL}${notificationUrl}`
+        : `${WEB_URL}/${notificationUrl}`;
       return {hasNotification: true, url: fullUrl};
     }
-    
+
     return {hasNotification: false};
   } catch (error) {
     console.error('❌ Error checking pending notification:', error);
