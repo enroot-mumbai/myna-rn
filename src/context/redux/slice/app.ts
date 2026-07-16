@@ -12,15 +12,15 @@ export const appSlice = createSlice({
   // `createSlice` will infer the state type from the `initialState` argument
   initialState,
   reducers: {
-    saveToken: (state, action: PayloadAction) => {
+    saveToken: (state, action: PayloadAction<string>) => {
       state.token = action.payload;
       return state;
     },
     removeToken: state => {
-      state.token = undefined;
+      state.token = '';
       return state;
     },
-    saveFCMToken: (state, action: PayloadAction) => {
+    saveFCMToken: (state, action: PayloadAction<string>) => {
       state.fcmToken = action.payload;
       return state;
     },
