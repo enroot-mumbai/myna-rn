@@ -20,8 +20,10 @@ import {
   storePendingPostLoginUrl,
   getPendingPostLoginUrl,
   clearPendingPostLoginUrl,
+  resolveDeepLinkUrl,
+  checkInstallReferrer,
 } from '../DeepLinkHandler';
-import {WEB_HOST} from '../config';
+import {WEB_HOST, WEB_URL} from '../config';
 
 beforeEach(() => {
   mockMemory.clear();
@@ -97,6 +99,54 @@ describe('extractPathFromWebUrl', () => {
   it('returns pathname without query', () => {
     expect(extractPathFromWebUrl(`https://${WEB_HOST}/learn/foo?x=1`)).toBe(
       '/learn/foo',
+    );
+  });
+});
+
+describe('resolveDeepLinkUrl pending stash', () => {
+  it('stashes learn path when logged out and returns WEB_URL', async () => {
+    mockMemory.delete('token');
+    const input = `https://${WEB_HOST}/learn/physical-health`;
+    const result = await resolveDeepLinkUrl(input, WEB_URL);
+    expect(result).toBe(WEB_URL);
+    expect(mockMemory.get('pending_post_login_url')).toBe(
+      `${WEB_URL}/learn/physical-health`,
+    );
+  });
+
+  it('does not stash signup', async () => {
+    mockMemory.delete('token');
+    mockMemory.delete('pending_post_login_url');
+    const result = await resolveDeepLinkUrl(
+      `https://${WEB_HOST}/signup?program=x`,
+      WEB_URL,
+    );
+    expect(mockMemory.get('pending_post_login_url')).toBeUndefined();
+    expect(result).toBeTruthy();
+    expect(result!.includes('/learn')).toBe(false);
+  });
+
+  it('navigates immediately when logged in', async () => {
+    mockMemory.set('token', 'abc');
+    const input = `https://${WEB_HOST}/telehealth`;
+    const result = await resolveDeepLinkUrl(input, WEB_URL);
+    expect(result).toBe(`${WEB_URL}/telehealth`);
+    expect(mockMemory.get('pending_post_login_url')).toBeUndefined();
+  });
+});
+
+describe('checkInstallReferrer pending route', () => {
+  it('stashes non-signup route and returns WEB_URL when logged out', async () => {
+    mockMemory.delete('token');
+    const InstallReferrer = {
+      getReferrer: async () => ({
+        installReferrer: 'route=%2Flearn%2Fphysical-health',
+      }),
+    };
+    const result = await checkInstallReferrer(WEB_URL, InstallReferrer);
+    expect(result).toEqual({hasReferrer: true, url: WEB_URL});
+    expect(mockMemory.get('pending_post_login_url')).toBe(
+      `${WEB_URL}/learn/physical-health`,
     );
   });
 });

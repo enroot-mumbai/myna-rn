@@ -350,6 +350,16 @@ export const checkInstallReferrer = async (
 
         return {hasReferrer: true, url: webViewUrl};
       }
+
+      if (route && !isLoggedIn && !isAuthOnlyPath(route)) {
+        const destination = handleRouteUrl(route, WEB_URL, {
+          ...(program ? {program} : {}),
+          ...(language ? {language} : {}),
+          ...(ref ? {ref} : {}),
+        });
+        await storePendingPostLoginUrl(destination);
+        return {hasReferrer: true, url: WEB_URL};
+      }
     }
 
     return {hasReferrer: false};
@@ -566,6 +576,17 @@ export const resolveDeepLinkUrl = async (
     } catch (error) {
       console.error('❌ Error resolving signup deep link:', error);
     }
+  }
+
+  try {
+    const path = extractPathFromWebUrl(resolvedUrl);
+    const loggedIn = await isUserLoggedIn();
+    if (!loggedIn && !isAuthOnlyPath(path)) {
+      await storePendingPostLoginUrl(resolvedUrl);
+      return WEB_URL;
+    }
+  } catch (error) {
+    console.error('❌ Error stashing pending post-login URL:', error);
   }
 
   return resolvedUrl;
