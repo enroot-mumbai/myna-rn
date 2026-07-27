@@ -25,7 +25,7 @@ import {useAppDispatch} from './src/context/redux/hooks';
 import {removeToken, saveToken} from './src/context/redux/slice/app';
 import crashlytics from '@react-native-firebase/crashlytics';
 import store from './src/context/redux/store';
-import { WEB_URL, WEB_HOST } from './src/utils/config';
+import {WEB_URL, WEB_HOST} from './src/utils/config';
 import {
   checkStoredReferrer,
   checkInstallReferrer,
@@ -39,6 +39,8 @@ import {
   checkPendingNotification,
   clearReferrerData,
   markAppAsLaunched,
+  getPendingPostLoginUrl,
+  clearPendingPostLoginUrl,
 } from './src/utils/DeepLinkHandler';
 
 const {InstallReferrer} = NativeModules;
@@ -78,7 +80,9 @@ const App = () => {
   );
   const [userInteraction, setUserInteraction] = useState(false);
   const [isWebViewReady, setIsWebViewReady] = useState(false);
-  const [pendingNotificationUrl, setPendingNotificationUrl] = useState<string | null>(null);
+  const [pendingNotificationUrl, setPendingNotificationUrl] = useState<
+    string | null
+  >(null);
 
   const navigateWebView = (url: string) => {
     if (webRef?.current && isWebViewReady) {
@@ -93,10 +97,10 @@ const App = () => {
   // Function to handle notification URLs
   const handleNotificationUrl = async (url: string | null) => {
     if (!url) return;
-    
+
     // Store the notification URL for persistence
     await storeNotificationUrl(url);
-    
+
     // If it's a route URL (like /learn/physical-health), handle it as a deep link
     if (url.startsWith('/') || !url.startsWith('http')) {
       const deepLinkUrl = handleDeepLink(url, WEB_URL);
@@ -105,7 +109,7 @@ const App = () => {
         return;
       }
     }
-    
+
     // If it's a full URL, check if it's our domain
     if (url.startsWith('http')) {
       if (url.includes(WEB_HOST) || url.includes('localhost')) {
@@ -118,9 +122,11 @@ const App = () => {
         return;
       }
     }
-    
+
     // Default: treat as route and append to base URL
-    const fullUrl = url.startsWith('/') ? `${WEB_URL}${url}` : `${WEB_URL}/${url}`;
+    const fullUrl = url.startsWith('/')
+      ? `${WEB_URL}${url}`
+      : `${WEB_URL}/${url}`;
     navigateWebView(fullUrl);
   };
 
@@ -172,8 +178,6 @@ const App = () => {
         data?.payload?.token !== null &&
         data?.payload?.token !== undefined;
 
-      
-
       switch (data?.type) {
         case 'LOG_IN':
           if (!isTokenAvailable) {
@@ -182,15 +186,20 @@ const App = () => {
             setFCMTokenState('');
             return;
           }
-          
 
           // Make sure we're setting a string value to the state
           const token = data?.payload?.token || '';
           setTokenState(token);
           dispatch(saveToken(token));
-          
+
           // Clear any stored notification URLs after successful login
           await clearStoredNotificationUrl();
+
+          const pendingUrl = await getPendingPostLoginUrl();
+          if (pendingUrl) {
+            await clearPendingPostLoginUrl();
+            navigateWebView(pendingUrl);
+          }
           return;
         case 'LOG_OUT':
           setTokenState('');
@@ -397,8 +406,6 @@ const App = () => {
 
     // Listen for notifications when the app is in the background or terminated
     messaging().setBackgroundMessageHandler(async remoteMessage => {
-      
-
       // Safely access notification properties with proper null checks
       const notificationTitle =
         remoteMessage?.notification?.title || 'New Notification';
@@ -425,7 +432,6 @@ const App = () => {
   useEffect(() => {
     const notificationListener = async () => {
       await messaging().onNotificationOpenedApp(remoteMessage => {
-        
         const openedUrl = remoteMessage?.data?.url;
         if (openedUrl && typeof openedUrl === 'string') {
           handleNotificationUrl(openedUrl);
@@ -461,7 +467,7 @@ const App = () => {
           handleNotificationUrl(storedUrl);
         }
       };
-      
+
       checkStoredNotifications();
     }
   }, [isWebViewReady]);
@@ -481,7 +487,8 @@ const App = () => {
   useEffect(() => {
     const initializeApp = async () => {
       // Priority 1: Check for pending notification URLs (highest priority)
-      const {hasNotification, url: notificationUrl} = await checkPendingNotification(WEB_URL);
+      const {hasNotification, url: notificationUrl} =
+        await checkPendingNotification(WEB_URL);
       if (hasNotification && notificationUrl) {
         setInitialUrl(notificationUrl);
         return;
@@ -502,7 +509,9 @@ const App = () => {
       }
 
       // Priority 3: Check stored referrer (only if no notification or deep link)
-      const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(WEB_URL);
+      const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(
+        WEB_URL,
+      );
       if (hasStoredReferrer && storedUrl) {
         setInitialUrl(storedUrl);
         return;
