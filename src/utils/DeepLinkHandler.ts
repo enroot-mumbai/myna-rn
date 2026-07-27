@@ -62,12 +62,10 @@ export const extractPathFromWebUrl = (url: string): string => {
   }
 };
 
-export const storePendingPostLoginUrl = async (
-  url: string,
-): Promise<void> => {
+export const storePendingPostLoginUrl = async (url: string): Promise<void> => {
   try {
     if (!isOurAppUrl(url)) {
-      console.error('❌ Refusing to store non-app pending URL:', url);
+      console.warn('[PendingPostLogin] store refused (not app host):', url);
       return;
     }
     await AsyncStorage.setItem(PENDING_POST_LOGIN_URL_KEY, url);
@@ -75,8 +73,9 @@ export const storePendingPostLoginUrl = async (
       PENDING_POST_LOGIN_TIMESTAMP_KEY,
       Date.now().toString(),
     );
+    console.log('[PendingPostLogin] stored:', url);
   } catch (error) {
-    console.error('❌ Error storing pending post-login URL:', error);
+    console.error('[PendingPostLogin] store error:', error);
   }
 };
 
@@ -84,8 +83,9 @@ export const clearPendingPostLoginUrl = async (): Promise<void> => {
   try {
     await AsyncStorage.removeItem(PENDING_POST_LOGIN_URL_KEY);
     await AsyncStorage.removeItem(PENDING_POST_LOGIN_TIMESTAMP_KEY);
+    console.log('[PendingPostLogin] cleared');
   } catch (error) {
-    console.error('❌ Error clearing pending post-login URL:', error);
+    console.error('[PendingPostLogin] clear error:', error);
   }
 };
 
@@ -97,23 +97,27 @@ export const getPendingPostLoginUrl = async (): Promise<string | null> => {
     );
 
     if (!url || !timestamp) {
+      console.log('[PendingPostLogin] get → none');
       return null;
     }
 
     const age = Date.now() - parseInt(timestamp, 10);
     if (age >= PENDING_POST_LOGIN_TTL_MS || Number.isNaN(age)) {
+      console.log('[PendingPostLogin] get → expired, ageMs=', age);
       await clearPendingPostLoginUrl();
       return null;
     }
 
     if (!isOurAppUrl(url)) {
+      console.warn('[PendingPostLogin] get → bad host, clearing:', url);
       await clearPendingPostLoginUrl();
       return null;
     }
 
+    console.log('[PendingPostLogin] get →', url, 'ageMs=', age);
     return url;
   } catch (error) {
-    console.error('❌ Error getting pending post-login URL:', error);
+    console.error('[PendingPostLogin] get error:', error);
     return null;
   }
 };
@@ -357,6 +361,12 @@ export const checkInstallReferrer = async (
           ...(language ? {language} : {}),
           ...(ref ? {ref} : {}),
         });
+        console.log(
+          '[PendingPostLogin] installReferrer stash route=',
+          route,
+          '→',
+          destination,
+        );
         await storePendingPostLoginUrl(destination);
         return {hasReferrer: true, url: WEB_URL};
       }
@@ -552,8 +562,13 @@ export const resolveDeepLinkUrl = async (
   url: string,
   WEB_URL: string,
 ): Promise<string | null> => {
+  console.log('[PendingPostLogin] resolveDeepLinkUrl input=', url);
   const resolvedUrl = handleDeepLink(url, WEB_URL);
-  if (!resolvedUrl) return null;
+  if (!resolvedUrl) {
+    console.log('[PendingPostLogin] handleDeepLink → null');
+    return null;
+  }
+  console.log('[PendingPostLogin] handleDeepLink →', resolvedUrl);
 
   if (resolvedUrl.includes('/signup')) {
     try {
@@ -568,11 +583,13 @@ export const resolveDeepLinkUrl = async (
         ref: queryParams.ref || undefined,
       });
 
-      return resolveSignupDestination(WEB_URL, {
+      const signupDest = await resolveSignupDestination(WEB_URL, {
         program: queryParams.program || undefined,
         language: queryParams.language || undefined,
         ref: queryParams.ref || undefined,
       });
+      console.log('[PendingPostLogin] signup branch →', signupDest);
+      return signupDest;
     } catch (error) {
       console.error('❌ Error resolving signup deep link:', error);
     }
@@ -581,14 +598,25 @@ export const resolveDeepLinkUrl = async (
   try {
     const path = extractPathFromWebUrl(resolvedUrl);
     const loggedIn = await isUserLoggedIn();
-    if (!loggedIn && !isAuthOnlyPath(path)) {
+    const authOnly = isAuthOnlyPath(path);
+    console.log(
+      '[PendingPostLogin] path=',
+      path,
+      'loggedIn=',
+      loggedIn,
+      'authOnly=',
+      authOnly,
+    );
+    if (!loggedIn && !authOnly) {
       await storePendingPostLoginUrl(resolvedUrl);
+      console.log('[PendingPostLogin] stash+login → return WEB_URL');
       return WEB_URL;
     }
   } catch (error) {
-    console.error('❌ Error stashing pending post-login URL:', error);
+    console.error('[PendingPostLogin] stash error:', error);
   }
 
+  console.log('[PendingPostLogin] passthrough →', resolvedUrl);
   return resolvedUrl;
 };
 

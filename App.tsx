@@ -34,7 +34,6 @@ import {
   getInitialAppUrl,
   getStoredProgram,
   storeNotificationUrl,
-  getStoredNotificationUrl,
   clearStoredNotificationUrl,
   checkPendingNotification,
   clearReferrerData,
@@ -69,39 +68,47 @@ const ProviderApp = () => {
 const App = () => {
   const webRef = useRef<WebView>(null);
   const insets = useSafeAreaInsets();
-  //   console.log("WEB_URL", WEB_URL);
   const [initialUrl, setInitialUrl] = useState(WEB_URL);
 
   const dispatch = useAppDispatch();
   const [tokenState, setTokenState] = useState('');
-  const [fcmTokenState, setFCMTokenState] = useState('');
   const [channelId, setChannelId] = useState(
     'fcm_fallback_notification_channel',
   );
-  const [userInteraction, setUserInteraction] = useState(false);
   const [isWebViewReady, setIsWebViewReady] = useState(false);
   const [pendingNotificationUrl, setPendingNotificationUrl] = useState<
     string | null
   >(null);
+  // Injected JS posts LOG_IN on every page load — only restore pending on logout→login edge
+  const isLoggedInRef = useRef(false);
+  // Remount key — native WebView often ignores source.uri updates alone
+  const [webViewNavKey, setWebViewNavKey] = useState(0);
 
   const navigateWebView = (url: string) => {
-    if (webRef?.current && isWebViewReady) {
-      webRef?.current?.injectJavaScript(`
-        window.location.href = '${url}';
-      `);
-    } else {
-      setPendingNotificationUrl(url);
-    }
+    console.log('[PendingPostLogin] navigateWebView via source remount →', url);
+    setIsWebViewReady(false);
+    setInitialUrl(url);
+    setWebViewNavKey(k => k + 1);
   };
 
-  // Function to handle notification URLs
+  // Shared by LOG_IN (returning user) and CLEAR_REFERRER_DATA (new registration)
+  const restorePendingPostLoginUrl = async (reason: string) => {
+    const pendingUrl = await getPendingPostLoginUrl();
+    if (!pendingUrl) {
+      console.log(`[PendingPostLogin] ${reason} no pending → stay put`);
+      return false;
+    }
+    console.log(`[PendingPostLogin] ${reason} restore →`, pendingUrl);
+    await clearPendingPostLoginUrl();
+    navigateWebView(pendingUrl);
+    return true;
+  };
+
   const handleNotificationUrl = async (url: string | null) => {
     if (!url) return;
 
-    // Store the notification URL for persistence
     await storeNotificationUrl(url);
 
-    // If it's a route URL (like /learn/physical-health), handle it as a deep link
     if (url.startsWith('/') || !url.startsWith('http')) {
       const deepLinkUrl = handleDeepLink(url, WEB_URL);
       if (deepLinkUrl) {
@@ -110,65 +117,30 @@ const App = () => {
       }
     }
 
-    // If it's a full URL, check if it's our domain
     if (url.startsWith('http')) {
       if (url.includes(WEB_HOST) || url.includes('localhost')) {
-        // It's our domain, navigate to it
         navigateWebView(url);
         return;
-      } else {
-        // External URL, open in external browser
-        Linking.openURL(url);
-        return;
       }
+      Linking.openURL(url);
+      return;
     }
 
-    // Default: treat as route and append to base URL
     const fullUrl = url.startsWith('/')
       ? `${WEB_URL}${url}`
       : `${WEB_URL}/${url}`;
     navigateWebView(fullUrl);
   };
 
-  // Helper function to extract URL from notification data
   const extractNotificationUrl = (notification: any): string | null => {
     if (typeof notification?.data?.url === 'string') {
       return notification.data.url;
     }
-    if (typeof (notification as any)?.userInfo?.url === 'string') {
-      return (notification as any).userInfo.url;
+    if (typeof notification?.userInfo?.url === 'string') {
+      return notification.userInfo.url;
     }
     return null;
   };
-
-  PushNotification.configure({
-    // (optional) Called when Token is generated (iOS and Android)
-    onRegister: function (_token) {},
-
-    // (required) Called when a remote is received or opened, or local notification is opened
-    onNotification: function (notification) {
-      setUserInteraction(notification.userInteraction);
-      if (notification.userInteraction) {
-        const url = extractNotificationUrl(notification);
-        if (url) {
-          handleNotificationUrl(url);
-        }
-      }
-    },
-    onAction: function (notification) {
-      // no-op
-    },
-    onRegistrationError: function (err) {
-      console.error(err.message, err);
-    },
-    permissions: {
-      alert: true,
-      badge: true,
-      sound: true,
-    },
-    popInitialNotification: true,
-    requestPermissions: true,
-  });
 
   const onMessage = async (payload: WebViewMessageEvent) => {
     try {
@@ -180,30 +152,38 @@ const App = () => {
 
       switch (data?.type) {
         case 'LOG_IN':
+          console.log(
+            '[PendingPostLogin] LOG_IN tokenAvailable=',
+            isTokenAvailable,
+            'wasLoggedIn=',
+            isLoggedInRef.current,
+          );
           if (!isTokenAvailable) {
+            isLoggedInRef.current = false;
             dispatch(removeToken());
             setTokenState('');
-            setFCMTokenState('');
+            console.log('[PendingPostLogin] LOG_IN empty token → skip restore');
             return;
           }
 
-          // Make sure we're setting a string value to the state
           const token = data?.payload?.token || '';
+          const justLoggedIn = !isLoggedInRef.current;
+          isLoggedInRef.current = true;
           setTokenState(token);
           dispatch(saveToken(token));
 
-          // Clear any stored notification URLs after successful login
           await clearStoredNotificationUrl();
 
-          const pendingUrl = await getPendingPostLoginUrl();
-          if (pendingUrl) {
-            await clearPendingPostLoginUrl();
-            navigateWebView(pendingUrl);
+          if (!justLoggedIn) {
+            console.log('[PendingPostLogin] LOG_IN echo → skip restore');
+            return;
           }
+
+          await restorePendingPostLoginUrl('LOG_IN');
           return;
         case 'LOG_OUT':
+          isLoggedInRef.current = false;
           setTokenState('');
-          setFCMTokenState('');
           return dispatch(removeToken());
 
         case 'GET_STORED_PROGRAM':
@@ -237,8 +217,10 @@ const App = () => {
           return;
 
         case 'CLEAR_REFERRER_DATA':
-          // Clear referrer data after successful signup
+          // Web fires this after successful signup — restore deep-link destination
           await clearReferrerData();
+          isLoggedInRef.current = true;
+          await restorePendingPostLoginUrl('SIGNUP');
           return;
 
         case 'MARK_WELCOME_COMPLETE':
@@ -264,12 +246,10 @@ const App = () => {
     url?: string;
   }) => {
     try {
-      // Make sure url is not undefined for Share.share
-      const shareParams = {
+      await Share.share({
         ...param,
-        url: param.url || '', // Provide default empty string if url is undefined
-      };
-      await Share.share(shareParams);
+        url: param.url || '',
+      });
     } catch (error) {
       Alert.alert('Error', 'An error occurred while sharing');
     }
@@ -279,7 +259,6 @@ const App = () => {
     const tokenLocalStorage = window.localStorage.getItem('token');
     window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
     
-    // Add function to get stored program data
     window.getStoredProgram = function() {
       window.ReactNativeWebView.postMessage(JSON.stringify({type:'GET_STORED_PROGRAM'}));
     };
@@ -288,15 +267,14 @@ const App = () => {
   const onAndroidBackPress = () => {
     if (webRef?.current) {
       webRef?.current?.goBack();
-      return true; // prevent default behavior (exit app)
+      return true;
     }
     return false;
   };
 
-  // updates the FCM token in the user profile
   const updateUserProfile = async (token: string): Promise<void> => {
     try {
-      const res = await axios.put(
+      await axios.put(
         `${API_URL}/user/update`,
         {deviceToken: token},
         {
@@ -305,17 +283,14 @@ const App = () => {
           },
         },
       );
-      setFCMTokenState(token || '');
     } catch (error) {
-      setFCMTokenState('');
+      // ignore — FCM registration best-effort
     }
   };
 
   const createFCMToken = () => {
-    // Request permission to receive notifications (optional)
     messaging().requestPermission();
 
-    // Get the FCM token
     messaging()
       .getToken()
       .then(async token => {
@@ -335,13 +310,13 @@ const App = () => {
   const createChannel = () => {
     PushNotification.createChannel(
       {
-        channelId: 'channel_1', // (required)
-        channelName: 'My channel', // (required)
-        channelDescription: 'A channel to categorise your notifications', // (optional) default: undefined.
-        playSound: false, // (optional) default: true
-        soundName: 'default', // (optional) See `soundName` parameter of `localNotification` function
-        importance: Importance.HIGH, // (optional) default: Importance.HIGH. Int value of the Android notification importance
-        vibrate: true, // (optional) default: true. Creates the default vibration pattern if true.
+        channelId: 'channel_1',
+        channelName: 'My channel',
+        channelDescription: 'A channel to categorise your notifications',
+        playSound: false,
+        soundName: 'default',
+        importance: Importance.HIGH,
+        vibrate: true,
       },
       () => {
         PushNotification.getChannels(channelIds => {
@@ -365,6 +340,30 @@ const App = () => {
       console.error(err);
     }
   }
+
+  useEffect(() => {
+    PushNotification.configure({
+      onNotification: function (notification) {
+        if (notification.userInteraction) {
+          const url = extractNotificationUrl(notification);
+          if (url) {
+            handleNotificationUrl(url);
+          }
+        }
+      },
+      onRegistrationError: function (err) {
+        console.error(err.message, err);
+      },
+      permissions: {
+        alert: true,
+        badge: true,
+        sound: true,
+      },
+      popInitialNotification: true,
+      requestPermissions: true,
+    });
+  }, []);
+
   useEffect(() => {
     if (Platform.OS === 'android') {
       requestNotificationPermission();
@@ -378,11 +377,9 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    // Listen for foreground notifications
     messaging().onMessage(async remoteMessage => {
       console.log('A new foreground notification arrived:', remoteMessage);
 
-      // Safely access notification properties with proper null checks
       const notificationTitle =
         remoteMessage?.notification?.title || 'New Notification';
       const notificationBody =
@@ -399,20 +396,16 @@ const App = () => {
         vibrate: true,
         vibration: 300,
         actions: ['yes', 'no'],
-        // carry through URL so onNotification tap has access
         userInfo: {url: remoteMessage?.data?.url},
       });
     });
 
-    // Listen for notifications when the app is in the background or terminated
     messaging().setBackgroundMessageHandler(async remoteMessage => {
-      // Safely access notification properties with proper null checks
       const notificationTitle =
         remoteMessage?.notification?.title || 'New Notification';
       const notificationBody =
         remoteMessage?.notification?.body || 'You have a new notification';
 
-      // Create a local notification
       PushNotification.localNotification({
         channelId: channelId,
         id: Date.now().toString(),
@@ -431,7 +424,7 @@ const App = () => {
 
   useEffect(() => {
     const notificationListener = async () => {
-      await messaging().onNotificationOpenedApp(remoteMessage => {
+      messaging().onNotificationOpenedApp(remoteMessage => {
         const openedUrl = remoteMessage?.data?.url;
         if (openedUrl && typeof openedUrl === 'string') {
           handleNotificationUrl(openedUrl);
@@ -442,7 +435,6 @@ const App = () => {
       if (initialNoti) {
         const initialUrlFromNoti = initialNoti?.data?.url;
         if (initialUrlFromNoti && typeof initialUrlFromNoti === 'string') {
-          // Store the notification URL to apply after WebView is ready
           setPendingNotificationUrl(initialUrlFromNoti);
         }
       }
@@ -450,27 +442,12 @@ const App = () => {
     notificationListener();
   }, []);
 
-  // Apply pending notification URL when WebView is ready
   useEffect(() => {
     if (isWebViewReady && pendingNotificationUrl) {
       handleNotificationUrl(pendingNotificationUrl);
       setPendingNotificationUrl(null);
     }
   }, [isWebViewReady, pendingNotificationUrl]);
-
-  // Check for stored notification URLs when WebView is ready
-  useEffect(() => {
-    if (isWebViewReady) {
-      const checkStoredNotifications = async () => {
-        const storedUrl = await getStoredNotificationUrl();
-        if (storedUrl) {
-          handleNotificationUrl(storedUrl);
-        }
-      };
-
-      checkStoredNotifications();
-    }
-  }, [isWebViewReady]);
 
   useEffect(() => {
     if (tokenState) {
@@ -479,27 +456,35 @@ const App = () => {
     }
   }, [tokenState]);
 
-  // crashlytics enabled
   useEffect(() => {
     crashlytics().setCrashlyticsCollectionEnabled(true);
   }, []);
 
   useEffect(() => {
     const initializeApp = async () => {
-      // Priority 1: Check for pending notification URLs (highest priority)
+      console.log('[PendingPostLogin] initializeApp start');
+
       const {hasNotification, url: notificationUrl} =
         await checkPendingNotification(WEB_URL);
       if (hasNotification && notificationUrl) {
+        console.log(
+          '[PendingPostLogin] init P1 notification →',
+          notificationUrl,
+        );
         setInitialUrl(notificationUrl);
         return;
       }
 
-      // Priority 2: Check for deep links
       try {
         const url = await Linking.getInitialURL();
+        console.log('[PendingPostLogin] init P2 getInitialURL →', url);
         if (url) {
           const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL);
           if (deepLinkUrl) {
+            console.log(
+              '[PendingPostLogin] init P2 setInitialUrl →',
+              deepLinkUrl,
+            );
             setInitialUrl(deepLinkUrl);
             return;
           }
@@ -508,22 +493,25 @@ const App = () => {
         console.error('❌ Error initializing deep links:', error);
       }
 
-      // Priority 3: Check stored referrer (only if no notification or deep link)
       const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(
         WEB_URL,
       );
       if (hasStoredReferrer && storedUrl) {
+        console.log('[PendingPostLogin] init P3 referrer →', storedUrl);
         setInitialUrl(storedUrl);
         return;
       }
 
-      // Priority 4: Check install referrer (lowest priority)
       try {
         const {hasReferrer, url: referrerUrl} = await checkInstallReferrer(
           WEB_URL,
           InstallReferrer,
         );
         if (hasReferrer && referrerUrl) {
+          console.log(
+            '[PendingPostLogin] init P4 installReferrer →',
+            referrerUrl,
+          );
           setInitialUrl(referrerUrl);
           return;
         }
@@ -531,33 +519,30 @@ const App = () => {
         console.error('❌ Error checking install referrer:', error);
       }
 
-      // Priority 5: First-time users without referral data see welcome
       const initialAppUrl = await getInitialAppUrl(WEB_URL);
+      console.log('[PendingPostLogin] init P5 default →', initialAppUrl);
       setInitialUrl(initialAppUrl);
-
-      // Set up URL event listener
-      const subscription = Linking.addEventListener('url', async ({url}) => {
-        const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL);
-        if (deepLinkUrl) {
-          setInitialUrl(deepLinkUrl);
-        }
-      });
-
-      return () => subscription.remove();
     };
 
     initializeApp();
   }, []);
 
-  // Modify WebView props to handle navigation state changes
-  const handleNavigationStateChange = (navState: any) => {
-    // Check if URL is Play Store
-    if (navState.url.includes('play.google.com')) {
-      Linking.openURL(navState.url);
-      return false; // Prevent WebView from loading Play Store
-    }
-    return true;
-  };
+  // Always register — was previously only wired on P5 path
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', async ({url}) => {
+      console.log('[PendingPostLogin] Linking url event →', url);
+      const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL);
+      if (deepLinkUrl) {
+        console.log(
+          '[PendingPostLogin] url event setInitialUrl →',
+          deepLinkUrl,
+        );
+        setInitialUrl(deepLinkUrl);
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   const injectSafeAreaInsets = () => {
     webRef?.current?.injectJavaScript(`
@@ -577,56 +562,42 @@ const App = () => {
     }
   }, [isWebViewReady, insets.top, insets.bottom]);
 
-  useEffect(() => {
-    Linking.getInitialURL().then(url => {
-      console.log('Initial URL:', url);
-    });
-
-    const subscription = Linking.addEventListener('url', ({url}) => {
-      console.log('URL event received:', url);
-    });
-
-    return () => subscription.remove();
-  }, []);
-
   return (
     <SafeAreaProvider>
-      <>
-        <WebView
-          ref={webRef}
-          source={{uri: initialUrl}}
-          style={{flex: 1}}
-          allowsBackForwardNavigationGestures={true}
-          injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
-          javaScriptEnabled={true}
-          onMessage={onMessage}
-          originWhitelist={['https://*', 'http://*', 'data:*']}
-          allowsFullscreenVideo={true}
-          onError={(error: any) => {
-            console.log('error', error);
-            Alert.alert('something went wrong', JSON.stringify(error));
-            crashlytics().recordError(error);
-          }}
-          scalesPageToFit={true}
-          startInLoadingState={true}
-          renderLoading={() => <SimpleLoader />}
-          onHttpError={syntheticEvent => {
-            const {nativeEvent} = syntheticEvent;
-            console.warn(
-              'WebView HTTP Error',
-              `URL: ${nativeEvent.url}, Status: ${nativeEvent.statusCode}`,
-            );
-          }}
-          onLoadStart={syntheticEvent => {
-            const {nativeEvent} = syntheticEvent;
-            console.log('Loading URL:', nativeEvent.url);
-          }}
-          onLoad={() => {
-            setIsWebViewReady(true);
-            injectSafeAreaInsets();
-          }}
-        />
-      </>
+      <WebView
+        key={webViewNavKey}
+        ref={webRef}
+        source={{uri: initialUrl}}
+        style={{flex: 1}}
+        allowsBackForwardNavigationGestures={true}
+        injectedJavaScriptBeforeContentLoaded={INJECTED_JAVASCRIPT}
+        javaScriptEnabled={true}
+        onMessage={onMessage}
+        originWhitelist={['https://*', 'http://*', 'data:*']}
+        allowsFullscreenVideo={true}
+        onError={(error: any) => {
+          console.log('error', error);
+          Alert.alert('something went wrong', JSON.stringify(error));
+          crashlytics().recordError(error);
+        }}
+        scalesPageToFit={true}
+        startInLoadingState={true}
+        renderLoading={() => <SimpleLoader />}
+        onHttpError={syntheticEvent => {
+          const {nativeEvent} = syntheticEvent;
+          console.warn(
+            'WebView HTTP Error',
+            `URL: ${nativeEvent.url}, Status: ${nativeEvent.statusCode}`,
+          );
+        }}
+        onLoadStart={syntheticEvent => {
+          const {nativeEvent} = syntheticEvent;
+          console.log('Loading URL:', nativeEvent.url);
+        }}
+        onLoad={() => {
+          setIsWebViewReady(true);
+        }}
+      />
     </SafeAreaProvider>
   );
 };
