@@ -62,6 +62,62 @@ export const extractPathFromWebUrl = (url: string): string => {
   }
 };
 
+export const storePendingPostLoginUrl = async (
+  url: string,
+): Promise<void> => {
+  try {
+    if (!isOurAppUrl(url)) {
+      console.error('❌ Refusing to store non-app pending URL:', url);
+      return;
+    }
+    await AsyncStorage.setItem(PENDING_POST_LOGIN_URL_KEY, url);
+    await AsyncStorage.setItem(
+      PENDING_POST_LOGIN_TIMESTAMP_KEY,
+      Date.now().toString(),
+    );
+  } catch (error) {
+    console.error('❌ Error storing pending post-login URL:', error);
+  }
+};
+
+export const clearPendingPostLoginUrl = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(PENDING_POST_LOGIN_URL_KEY);
+    await AsyncStorage.removeItem(PENDING_POST_LOGIN_TIMESTAMP_KEY);
+  } catch (error) {
+    console.error('❌ Error clearing pending post-login URL:', error);
+  }
+};
+
+export const getPendingPostLoginUrl = async (): Promise<string | null> => {
+  try {
+    const url = await AsyncStorage.getItem(PENDING_POST_LOGIN_URL_KEY);
+    const timestamp = await AsyncStorage.getItem(
+      PENDING_POST_LOGIN_TIMESTAMP_KEY,
+    );
+
+    if (!url || !timestamp) {
+      return null;
+    }
+
+    const age = Date.now() - parseInt(timestamp, 10);
+    if (age >= PENDING_POST_LOGIN_TTL_MS || Number.isNaN(age)) {
+      await clearPendingPostLoginUrl();
+      return null;
+    }
+
+    if (!isOurAppUrl(url)) {
+      await clearPendingPostLoginUrl();
+      return null;
+    }
+
+    return url;
+  } catch (error) {
+    console.error('❌ Error getting pending post-login URL:', error);
+    return null;
+  }
+};
+
 // Check if this is the first app launch after install
 export const isFirstLaunch = async (): Promise<boolean> => {
   try {

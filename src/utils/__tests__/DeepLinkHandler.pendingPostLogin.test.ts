@@ -17,12 +17,49 @@ import {
   isAuthOnlyPath,
   isOurAppUrl,
   extractPathFromWebUrl,
+  storePendingPostLoginUrl,
+  getPendingPostLoginUrl,
+  clearPendingPostLoginUrl,
 } from '../DeepLinkHandler';
 import {WEB_HOST} from '../config';
 
 beforeEach(() => {
   mockMemory.clear();
   jest.clearAllMocks();
+});
+
+describe('pending post-login url storage', () => {
+  const goodUrl = `https://${WEB_HOST}/learn/physical-health`;
+
+  it('stores and returns url within TTL', async () => {
+    await storePendingPostLoginUrl(goodUrl);
+    await expect(getPendingPostLoginUrl()).resolves.toBe(goodUrl);
+  });
+
+  it('rejects external url on store', async () => {
+    await storePendingPostLoginUrl('https://evil.example/learn');
+    await expect(getPendingPostLoginUrl()).resolves.toBeNull();
+  });
+
+  it('returns null and clears when expired', async () => {
+    await storePendingPostLoginUrl(goodUrl);
+    const eightDaysAgo = (Date.now() - 8 * 24 * 60 * 60 * 1000).toString();
+    mockMemory.set('pending_post_login_timestamp', eightDaysAgo);
+    await expect(getPendingPostLoginUrl()).resolves.toBeNull();
+    expect(mockMemory.has('pending_post_login_url')).toBe(false);
+  });
+
+  it('clearPendingPostLoginUrl removes keys', async () => {
+    await storePendingPostLoginUrl(goodUrl);
+    await clearPendingPostLoginUrl();
+    await expect(getPendingPostLoginUrl()).resolves.toBeNull();
+  });
+
+  it('get clears malformed / non-app url', async () => {
+    mockMemory.set('pending_post_login_url', 'https://evil.example/x');
+    mockMemory.set('pending_post_login_timestamp', Date.now().toString());
+    await expect(getPendingPostLoginUrl()).resolves.toBeNull();
+  });
 });
 
 describe('isAuthOnlyPath', () => {
@@ -63,5 +100,3 @@ describe('extractPathFromWebUrl', () => {
     );
   });
 });
-
-export {mockMemory};
