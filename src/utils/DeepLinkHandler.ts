@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {WEB_HOST} from './config';
 
+const PENDING_POST_LOGIN_URL_KEY = 'pending_post_login_url';
+const PENDING_POST_LOGIN_TIMESTAMP_KEY = 'pending_post_login_timestamp';
+const PENDING_POST_LOGIN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 // Parse query string into key-value pairs
 export const parseQueryString = (
   queryString: string,
@@ -24,6 +28,38 @@ export const parseQueryString = (
   }
 
   return params;
+};
+
+export const isAuthOnlyPath = (path: string): boolean => {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  if (normalized === '/' || path === '') {
+    return true;
+  }
+  const base = normalized.split('?')[0].replace(/\/$/, '') || '/';
+  return base === '/signup' || base === '/welcome' || base === '/login';
+};
+
+export const isOurAppUrl = (url: string): boolean => {
+  if (!url) return false;
+  return url.includes(WEB_HOST) || url.includes('localhost');
+};
+
+export const extractPathFromWebUrl = (url: string): string => {
+  try {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      const withoutScheme = url.replace(/^https?:\/\//, '');
+      const pathStart = withoutScheme.indexOf('/');
+      if (pathStart === -1) return '/';
+      const pathAndQuery = withoutScheme.substring(pathStart);
+      const q = pathAndQuery.indexOf('?');
+      return q === -1 ? pathAndQuery : pathAndQuery.substring(0, q);
+    }
+    const [pathPart] = url.split('?');
+    if (!pathPart || pathPart === '') return '/';
+    return pathPart.startsWith('/') ? pathPart : `/${pathPart}`;
+  } catch {
+    return '/';
+  }
 };
 
 // Check if this is the first app launch after install
