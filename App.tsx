@@ -41,11 +41,15 @@ import {
   getPendingPostLoginUrl,
   clearPendingPostLoginUrl,
 } from './src/utils/DeepLinkHandler';
+import {
+  cancelNativeRecording,
+  startNativeRecording,
+  stopNativeRecording,
+} from './src/utils/nativeAudioRecorder';
 
 const {InstallReferrer} = NativeModules;
 
 const API_URL = 'https://myna-prod.enrootmumbai.in';
-// const API_URL = 'https://myna-stg.enrootmumbai.in';
 
 export interface onMessagePayload {
   type?: string;
@@ -79,9 +83,7 @@ const App = () => {
   const [pendingNotificationUrl, setPendingNotificationUrl] = useState<
     string | null
   >(null);
-  // Injected JS posts LOG_IN on every page load — only restore pending on logout→login edge
   const isLoggedInRef = useRef(false);
-  // Remount key — native WebView often ignores source.uri updates alone
   const [webViewNavKey, setWebViewNavKey] = useState(0);
 
   const navigateWebView = (url: string) => {
@@ -91,7 +93,13 @@ const App = () => {
     setWebViewNavKey(k => k + 1);
   };
 
-  // Shared by LOG_IN (returning user) and CLEAR_REFERRER_DATA (new registration)
+  const postToWeb = (message: {
+    type: string;
+    payload?: Record<string, unknown>;
+  }) => {
+    webRef?.current?.postMessage(JSON.stringify(message));
+  };
+
   const restorePendingPostLoginUrl = async (reason: string) => {
     const pendingUrl = await getPendingPostLoginUrl();
     if (!pendingUrl) {
@@ -227,6 +235,45 @@ const App = () => {
           await markAppAsLaunched();
           return;
 
+        case 'START_NATIVE_RECORDING':
+          try {
+            await startNativeRecording();
+            postToWeb({type: 'NATIVE_RECORDING_STARTED'});
+          } catch (error: any) {
+            postToWeb({
+              type: 'NATIVE_RECORDING_ERROR',
+              payload: {
+                message:
+                  error?.message ||
+                  'Could not start recording. Please try again.',
+              },
+            });
+          }
+          return;
+
+        case 'STOP_NATIVE_RECORDING':
+          try {
+            const recording = await stopNativeRecording();
+            postToWeb({
+              type: 'NATIVE_RECORDING_STOPPED',
+              payload: recording,
+            });
+          } catch (error: any) {
+            postToWeb({
+              type: 'NATIVE_RECORDING_ERROR',
+              payload: {
+                message:
+                  error?.message ||
+                  'Could not save the recording. Please try again.',
+              },
+            });
+          }
+          return;
+
+        case 'CANCEL_NATIVE_RECORDING':
+          await cancelNativeRecording();
+          return;
+
         default:
           if (payload.nativeEvent.data.startsWith('share:')) {
             const param = JSON.parse(
@@ -255,13 +302,32 @@ const App = () => {
     }
   };
 
-  const INJECTED_JAVASCRIPT = `(function(message) {
+  const INJECTED_JAVASCRIPT = `(function() {
     const tokenLocalStorage = window.localStorage.getItem('token');
     window.ReactNativeWebView.postMessage(JSON.stringify({type:'LOG_IN',payload:{token:tokenLocalStorage}}));
-    
+
     window.getStoredProgram = function() {
       window.ReactNativeWebView.postMessage(JSON.stringify({type:'GET_STORED_PROGRAM'}));
     };
+
+    if (!navigator.mediaDevices) {
+      navigator.mediaDevices = {};
+    }
+
+    if (!navigator.mediaDevices.getUserMedia) {
+      const legacyGetUserMedia =
+        navigator.webkitGetUserMedia ||
+        navigator.mozGetUserMedia ||
+        navigator.getUserMedia;
+
+      if (legacyGetUserMedia) {
+        navigator.mediaDevices.getUserMedia = function(constraints) {
+          return new Promise(function(resolve, reject) {
+            legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+          });
+        };
+      }
+    }
   })();`;
 
   const onAndroidBackPress = () => {
@@ -364,9 +430,39 @@ const App = () => {
     });
   }, []);
 
+  async function requestMicrophonePermissionOnLaunch() {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    try {
+      const alreadyGranted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      );
+
+      if (alreadyGranted) {
+        return;
+      }
+
+      await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'Microphone Permission',
+          message:
+            'Myna needs microphone access so you can send voice messages in chat.',
+          buttonPositive: 'Allow',
+          buttonNegative: 'Deny',
+        },
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   useEffect(() => {
     if (Platform.OS === 'android') {
       requestNotificationPermission();
+      requestMicrophonePermissionOnLaunch();
     }
   }, []);
 
@@ -575,6 +671,10 @@ const App = () => {
         onMessage={onMessage}
         originWhitelist={['https://*', 'http://*', 'data:*']}
         allowsFullscreenVideo={true}
+        allowsInlineMediaPlayback={true}
+        mediaCapturePermissionGrantType="grant"
+        domStorageEnabled={true}
+        mixedContentMode="always"
         onError={(error: any) => {
           console.log('error', error);
           Alert.alert('something went wrong', JSON.stringify(error));
