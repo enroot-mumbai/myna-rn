@@ -15,6 +15,8 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 import {
   isAuthOnlyPath,
+  isPublicPath,
+  shouldStashPendingPostLogin,
   isOurAppUrl,
   extractPathFromWebUrl,
   storePendingPostLoginUrl,
@@ -84,6 +86,26 @@ describe('isAuthOnlyPath', () => {
   });
 });
 
+describe('isPublicPath / shouldStashPendingPostLogin', () => {
+  it.each([
+    ['/privacy-policy', true],
+    ['privacy-policy', true],
+    ['/terms-of-service', true],
+    ['/terms', true],
+    ['/cookie-policy', true],
+    ['/learn/physical-health', false],
+    ['/login', false],
+  ])('isPublicPath(%s) → %s', (path, expected) => {
+    expect(isPublicPath(path)).toBe(expected);
+  });
+
+  it('does not stash public or auth-only paths', () => {
+    expect(shouldStashPendingPostLogin('/privacy-policy')).toBe(false);
+    expect(shouldStashPendingPostLogin('/login')).toBe(false);
+    expect(shouldStashPendingPostLogin('/learn/foo')).toBe(true);
+  });
+});
+
 describe('isOurAppUrl', () => {
   it('accepts WEB_HOST and localhost', () => {
     expect(isOurAppUrl(`https://${WEB_HOST}/learn`)).toBe(true);
@@ -112,6 +134,14 @@ describe('resolveDeepLinkUrl pending stash', () => {
     expect(mockMemory.get('pending_post_login_url')).toBe(
       `${WEB_URL}/learn/physical-health`,
     );
+  });
+
+  it('passes through privacy-policy when logged out (no stash)', async () => {
+    mockMemory.delete('token');
+    const input = `https://${WEB_HOST}/privacy-policy`;
+    const result = await resolveDeepLinkUrl(input, WEB_URL);
+    expect(result).toBe(`${WEB_URL}/privacy-policy`);
+    expect(mockMemory.get('pending_post_login_url')).toBeUndefined();
   });
 
   it('does not stash signup', async () => {

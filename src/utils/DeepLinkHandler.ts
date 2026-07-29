@@ -30,14 +30,38 @@ export const parseQueryString = (
   return params;
 };
 
-export const isAuthOnlyPath = (path: string): boolean => {
+const normalizeAppPath = (path: string): string => {
   const normalized = path.startsWith('/') ? path : `/${path}`;
   if (normalized === '/' || path === '') {
-    return true;
+    return '/';
   }
-  const base = normalized.split('?')[0].replace(/\/$/, '') || '/';
-  return base === '/signup' || base === '/welcome' || base === '/login';
+  return normalized.split('?')[0].replace(/\/$/, '') || '/';
 };
+
+export const isAuthOnlyPath = (path: string): boolean => {
+  const base = normalizeAppPath(path);
+  return (
+    base === '/' ||
+    base === '/signup' ||
+    base === '/welcome' ||
+    base === '/login'
+  );
+};
+
+// Logged-out deep links that must open as-is (no stash → login redirect)
+const PUBLIC_PATHS = new Set([
+  '/privacy-policy',
+  '/terms',
+  '/terms-of-service',
+  '/terms-and-conditions',
+  '/cookie-policy',
+]);
+
+export const isPublicPath = (path: string): boolean =>
+  PUBLIC_PATHS.has(normalizeAppPath(path));
+
+export const shouldStashPendingPostLogin = (path: string): boolean =>
+  !isAuthOnlyPath(path) && !isPublicPath(path);
 
 export const isOurAppUrl = (url: string): boolean => {
   if (!url) return false;
@@ -355,7 +379,7 @@ export const checkInstallReferrer = async (
         return {hasReferrer: true, url: webViewUrl};
       }
 
-      if (route && !isLoggedIn && !isAuthOnlyPath(route)) {
+      if (route && !isLoggedIn && shouldStashPendingPostLogin(route)) {
         const destination = handleRouteUrl(route, WEB_URL, {
           ...(program ? {program} : {}),
           ...(language ? {language} : {}),
@@ -598,16 +622,18 @@ export const resolveDeepLinkUrl = async (
   try {
     const path = extractPathFromWebUrl(resolvedUrl);
     const loggedIn = await isUserLoggedIn();
-    const authOnly = isAuthOnlyPath(path);
+    const stash = shouldStashPendingPostLogin(path);
     console.log(
       '[PendingPostLogin] path=',
       path,
       'loggedIn=',
       loggedIn,
-      'authOnly=',
-      authOnly,
+      'stash=',
+      stash,
+      'public=',
+      isPublicPath(path),
     );
-    if (!loggedIn && !authOnly) {
+    if (!loggedIn && stash) {
       await storePendingPostLoginUrl(resolvedUrl);
       console.log('[PendingPostLogin] stash+login → return WEB_URL');
       return WEB_URL;
