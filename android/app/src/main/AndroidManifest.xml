@@ -31,7 +31,6 @@
                 <data
                     android:scheme="https"
                     android:host="mynafe.vercel.app" />
-                <data android:scheme="https" android:host="225b-2a09-bac5-3e0e-16b4-00-243-7e.ngrok-free.app" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -54,7 +53,6 @@
                 <data
                     android:scheme="https"
                    android:host="mynafe.vercel.app" />
-                <data android:scheme="https" android:host="225b-2a09-bac5-3e0e-16b4-00-243-7e.ngrok-free.app" />
             </intent-filter>
         </activity>
         
