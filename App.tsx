@@ -4,6 +4,7 @@ import * as React from 'react';
 import {useEffect, useState, useRef} from 'react';
 import {
   Alert,
+  AppState,
   BackHandler,
   Platform,
   PermissionsAndroid,
@@ -40,6 +41,8 @@ import {
   markAppAsLaunched,
   getPendingPostLoginUrl,
   clearPendingPostLoginUrl,
+  setNativeLoginToken,
+  clearNativeLoginToken,
 } from './src/utils/DeepLinkHandler';
 import {
   cancelNativeRecording,
@@ -87,10 +90,18 @@ const App = () => {
   const [webViewNavKey, setWebViewNavKey] = useState(0);
 
   const navigateWebView = (url: string) => {
-    console.log('[PendingPostLogin] navigateWebView via source remount →', url);
+    console.log('[DeepLink] navigateWebView in=', url, {
+      ready: isWebViewReady,
+      currentInitialUrl: initialUrl,
+      webViewNavKey,
+    });
     setIsWebViewReady(false);
     setInitialUrl(url);
-    setWebViewNavKey(k => k + 1);
+    setWebViewNavKey(k => {
+      const next = k + 1;
+      console.log('[DeepLink] navigateWebView remount key', k, '→', next);
+      return next;
+    });
   };
 
   const postToWeb = (message: {
@@ -170,6 +181,7 @@ const App = () => {
             isLoggedInRef.current = false;
             dispatch(removeToken());
             setTokenState('');
+            await clearNativeLoginToken();
             console.log('[PendingPostLogin] LOG_IN empty token → skip restore');
             return;
           }
@@ -179,19 +191,23 @@ const App = () => {
           isLoggedInRef.current = true;
           setTokenState(token);
           dispatch(saveToken(token));
+          await setNativeLoginToken(token);
 
           await clearStoredNotificationUrl();
 
-          if (!justLoggedIn) {
-            console.log('[PendingPostLogin] LOG_IN echo → skip restore');
-            return;
+          // Always try restore — warm deep link may stash when AsyncStorage
+          // lagged, then LOG_IN echo used to skip and leave user on home.
+          const restored = await restorePendingPostLoginUrl(
+            justLoggedIn ? 'LOG_IN' : 'LOG_IN_ECHO',
+          );
+          if (!restored && !justLoggedIn) {
+            console.log('[PendingPostLogin] LOG_IN echo → no pending');
           }
-
-          await restorePendingPostLoginUrl('LOG_IN');
           return;
         case 'LOG_OUT':
           isLoggedInRef.current = false;
           setTokenState('');
+          await clearNativeLoginToken();
           return dispatch(removeToken());
 
         case 'GET_STORED_PROGRAM':
@@ -558,42 +574,46 @@ const App = () => {
 
   useEffect(() => {
     const initializeApp = async () => {
-      console.log('[PendingPostLogin] initializeApp start');
+      console.log('[DeepLink] initializeApp start', {
+        platform: Platform.OS,
+        appState: AppState.currentState,
+        webUrl: WEB_URL,
+      });
 
       const {hasNotification, url: notificationUrl} =
         await checkPendingNotification(WEB_URL);
+      console.log('[DeepLink] init P1 notification', {
+        hasNotification,
+        notificationUrl,
+      });
       if (hasNotification && notificationUrl) {
-        console.log(
-          '[PendingPostLogin] init P1 notification →',
-          notificationUrl,
-        );
         setInitialUrl(notificationUrl);
         return;
       }
 
       try {
         const url = await Linking.getInitialURL();
-        console.log('[PendingPostLogin] init P2 getInitialURL →', url);
+        console.log('[DeepLink] init P2 getInitialURL →', url);
         if (url) {
           const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL);
+          console.log('[DeepLink] init P2 resolved →', deepLinkUrl);
           if (deepLinkUrl) {
-            console.log(
-              '[PendingPostLogin] init P2 setInitialUrl →',
-              deepLinkUrl,
-            );
             setInitialUrl(deepLinkUrl);
             return;
           }
         }
       } catch (error) {
-        console.error('❌ Error initializing deep links:', error);
+        console.error('[DeepLink] init P2 error', error);
       }
 
       const {hasStoredReferrer, url: storedUrl} = await checkStoredReferrer(
         WEB_URL,
       );
+      console.log('[DeepLink] init P3 referrer', {
+        hasStoredReferrer,
+        storedUrl,
+      });
       if (hasStoredReferrer && storedUrl) {
-        console.log('[PendingPostLogin] init P3 referrer →', storedUrl);
         setInitialUrl(storedUrl);
         return;
       }
@@ -603,41 +623,87 @@ const App = () => {
           WEB_URL,
           InstallReferrer,
         );
+        console.log('[DeepLink] init P4 installReferrer', {
+          hasReferrer,
+          referrerUrl,
+        });
         if (hasReferrer && referrerUrl) {
-          console.log(
-            '[PendingPostLogin] init P4 installReferrer →',
-            referrerUrl,
-          );
           setInitialUrl(referrerUrl);
           return;
         }
       } catch (error) {
-        console.error('❌ Error checking install referrer:', error);
+        console.error('[DeepLink] init P4 error', error);
       }
 
       const initialAppUrl = await getInitialAppUrl(WEB_URL);
-      console.log('[PendingPostLogin] init P5 default →', initialAppUrl);
+      console.log('[DeepLink] init P5 default →', initialAppUrl);
       setInitialUrl(initialAppUrl);
     };
 
     initializeApp();
   }, []);
 
-  // Always register — was previously only wired on P5 path
+  // Warm start (app in recents): getInitialURL is null; url event fires instead.
+  // Must remount WebView — setInitialUrl alone won't navigate an already-loaded WebView.
   useEffect(() => {
+    console.log('[DeepLink] Linking url listener registered');
     const subscription = Linking.addEventListener('url', async ({url}) => {
-      console.log('[PendingPostLogin] Linking url event →', url);
-      const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL);
-      if (deepLinkUrl) {
-        console.log(
-          '[PendingPostLogin] url event setInitialUrl →',
-          deepLinkUrl,
-        );
-        setInitialUrl(deepLinkUrl);
+      console.log('[DeepLink] Linking url EVENT fired →', url, {
+        appState: AppState.currentState,
+        ready: isWebViewReady,
+        currentInitialUrl: initialUrl,
+      });
+      try {
+        // Warm start: trust in-memory session — AsyncStorage token may be missing
+        // even when WebView already logged in (see isLoggedInRef).
+        const deepLinkUrl = await resolveDeepLinkUrl(url, WEB_URL, {
+          isLoggedIn: isLoggedInRef.current,
+        });
+        console.log('[DeepLink] url event resolved →', deepLinkUrl, {
+          isLoggedInRef: isLoggedInRef.current,
+        });
+        if (deepLinkUrl) {
+          navigateWebView(deepLinkUrl);
+        } else {
+          console.log('[DeepLink] url event resolve returned null — skip nav');
+        }
+      } catch (error) {
+        console.error('[DeepLink] url event error', error);
       }
     });
 
-    return () => subscription.remove();
+    return () => {
+      console.log('[DeepLink] Linking url listener removed');
+      subscription.remove();
+    };
+  }, []);
+
+  // Catch warm-resume cases where url event may be missed (e.g. SplashActivity hop).
+  useEffect(() => {
+    const onAppStateChange = async (nextState: AppStateStatus) => {
+      console.log('[DeepLink] AppState →', nextState, {
+        previous: AppState.currentState,
+        ready: isWebViewReady,
+        currentInitialUrl: initialUrl,
+        webViewNavKey,
+      });
+      if (nextState !== 'active') {
+        return;
+      }
+      try {
+        const url = await Linking.getInitialURL();
+        console.log('[DeepLink] AppState active getInitialURL →', url);
+      } catch (error) {
+        console.error('[DeepLink] AppState getInitialURL error', error);
+      }
+    };
+
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    console.log(
+      '[DeepLink] AppState listener registered, current=',
+      AppState.currentState,
+    );
+    return () => sub.remove();
   }, []);
 
   const injectSafeAreaInsets = () => {
@@ -692,9 +758,17 @@ const App = () => {
         }}
         onLoadStart={syntheticEvent => {
           const {nativeEvent} = syntheticEvent;
-          console.log('Loading URL:', nativeEvent.url);
+          console.log('[DeepLink] WebView onLoadStart', {
+            url: nativeEvent.url,
+            initialUrl,
+            webViewNavKey,
+          });
         }}
         onLoad={() => {
+          console.log('[DeepLink] WebView onLoad ready', {
+            initialUrl,
+            webViewNavKey,
+          });
           setIsWebViewReady(true);
         }}
       />

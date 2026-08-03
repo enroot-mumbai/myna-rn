@@ -43,8 +43,9 @@ class MainApplication : Application(), ReactApplication {
         override val isHermesEnabled: Boolean = BuildConfig.IS_HERMES_ENABLED
       }
 
-  override val reactHost: ReactHost
-    get() = getDefaultReactHost(applicationContext, reactNativeHost)
+  override val reactHost: ReactHost by lazy {
+    getDefaultReactHost(applicationContext, reactNativeHost)
+  }
 
   override fun registerReceiver(receiver: BroadcastReceiver?, filter: IntentFilter?): Intent? {
     return if (Build.VERSION.SDK_INT >= 34 && applicationInfo.targetSdkVersion >= 34) {
@@ -55,8 +56,8 @@ class MainApplication : Application(), ReactApplication {
   }
 
   override fun onCreate() {
-    super.onCreate()
     SoLoader.init(this, OpenSourceMergedSoMapping)
+    super.onCreate()
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
       load()

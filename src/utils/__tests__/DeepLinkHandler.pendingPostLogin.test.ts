@@ -163,6 +163,16 @@ describe('resolveDeepLinkUrl pending stash', () => {
     expect(result).toBe(`${WEB_URL}/telehealth`);
     expect(mockMemory.get('pending_post_login_url')).toBeUndefined();
   });
+
+  it('honors isLoggedIn override when AsyncStorage has no token', async () => {
+    mockMemory.delete('token');
+    const input = `https://${WEB_HOST}/learn/mental-health/iq-eq-sq?overview=false`;
+    const result = await resolveDeepLinkUrl(input, WEB_URL, {isLoggedIn: true});
+    expect(result).toBe(
+      `${WEB_URL}/learn/mental-health/iq-eq-sq?overview=false`,
+    );
+    expect(mockMemory.get('pending_post_login_url')).toBeUndefined();
+  });
 });
 
 describe('checkInstallReferrer pending route', () => {

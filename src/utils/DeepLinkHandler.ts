@@ -166,14 +166,40 @@ export const markAppAsLaunched = async (): Promise<void> => {
   }
 };
 
-// Check if user is logged in
+// Check if user is logged in (native AsyncStorage mirror of web localStorage token)
 export const isUserLoggedIn = async (): Promise<boolean> => {
   try {
     const token = await AsyncStorage.getItem('token');
-    return token !== null && token !== '';
+    const loggedIn = token !== null && token !== '';
+    console.log('[DeepLink] isUserLoggedIn →', loggedIn);
+    return loggedIn;
   } catch (error) {
-    console.error('❌ Error checking login status:', error);
+    console.error('[DeepLink] isUserLoggedIn error', error);
     return false;
+  }
+};
+
+// Keep AsyncStorage in sync with WebView LOG_IN / LOG_OUT (isUserLoggedIn reads this)
+export const setNativeLoginToken = async (token: string): Promise<void> => {
+  try {
+    if (!token) {
+      await AsyncStorage.removeItem('token');
+      console.log('[DeepLink] setNativeLoginToken cleared (empty)');
+      return;
+    }
+    await AsyncStorage.setItem('token', token);
+    console.log('[DeepLink] setNativeLoginToken saved');
+  } catch (error) {
+    console.error('[DeepLink] setNativeLoginToken error', error);
+  }
+};
+
+export const clearNativeLoginToken = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem('token');
+    console.log('[DeepLink] clearNativeLoginToken');
+  } catch (error) {
+    console.error('[DeepLink] clearNativeLoginToken error', error);
   }
 };
 
@@ -405,6 +431,7 @@ export const checkInstallReferrer = async (
 
 // Handle deep links
 export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
+  console.log('[DeepLink] handleDeepLink in=', url, 'WEB_URL=', WEB_URL);
   if (!url) return null;
 
   try {
@@ -465,29 +492,42 @@ export const handleDeepLink = (url: string, WEB_URL: string): string | null => {
       }
     }
 
+    console.log(
+      '[DeepLink] handleDeepLink parsed path=',
+      path,
+      'params=',
+      queryParams,
+    );
+
     // Handle various paths
     if (path === 'signup' || path === '/signup') {
       const language = queryParams['language'] || queryParams['lang'];
-      return buildSignupUrl(WEB_URL, {
+      const signupUrl = buildSignupUrl(WEB_URL, {
         program: queryParams['program'],
         language,
         ref: queryParams['ref'],
       });
+      console.log('[DeepLink] handleDeepLink signup →', signupUrl);
+      return signupUrl;
     }
 
     // Handle other web paths (like /learn/physical-health, /dashboard, etc.)
     if (path && path !== '/' && path !== '') {
-      return handleRouteUrl(path, WEB_URL, queryParams);
+      const routeUrl = handleRouteUrl(path, WEB_URL, queryParams);
+      console.log('[DeepLink] handleDeepLink route →', routeUrl);
+      return routeUrl;
     }
 
     // If no specific path, return the base URL
     if (path === '/' || path === '') {
+      console.log('[DeepLink] handleDeepLink root →', WEB_URL);
       return WEB_URL;
     }
 
+    console.log('[DeepLink] handleDeepLink unmatched → null');
     return null;
   } catch (error) {
-    console.error('❌ Error handling deep link:', error);
+    console.error('[DeepLink] handleDeepLink error', error);
     return null;
   }
 };
@@ -581,12 +621,20 @@ export const clearReferrerData = async (): Promise<void> => {
   }
 };
 
-// Resolve deep link URL with welcome-first flow for new users
+// Resolve deep link URL with welcome-first flow for new users.
+// Pass isLoggedIn when caller already knows (e.g. warm start via isLoggedInRef) —
+// AsyncStorage token may lag behind WebView session.
 export const resolveDeepLinkUrl = async (
   url: string,
   WEB_URL: string,
+  options?: {isLoggedIn?: boolean},
 ): Promise<string | null> => {
-  console.log('[PendingPostLogin] resolveDeepLinkUrl input=', url);
+  console.log(
+    '[PendingPostLogin] resolveDeepLinkUrl input=',
+    url,
+    'opts=',
+    options,
+  );
   const resolvedUrl = handleDeepLink(url, WEB_URL);
   if (!resolvedUrl) {
     console.log('[PendingPostLogin] handleDeepLink → null');
@@ -621,7 +669,10 @@ export const resolveDeepLinkUrl = async (
 
   try {
     const path = extractPathFromWebUrl(resolvedUrl);
-    const loggedIn = await isUserLoggedIn();
+    const loggedIn =
+      options?.isLoggedIn !== undefined
+        ? options.isLoggedIn
+        : await isUserLoggedIn();
     const stash = shouldStashPendingPostLogin(path);
     console.log(
       '[PendingPostLogin] path=',
@@ -632,11 +683,17 @@ export const resolveDeepLinkUrl = async (
       stash,
       'public=',
       isPublicPath(path),
+      'override=',
+      options?.isLoggedIn,
     );
     if (!loggedIn && stash) {
       await storePendingPostLoginUrl(resolvedUrl);
       console.log('[PendingPostLogin] stash+login → return WEB_URL');
       return WEB_URL;
+    }
+    // Logged-in (or public) open — drop stale pending so LOG_IN echo can't hijack
+    if (loggedIn) {
+      await clearPendingPostLoginUrl();
     }
   } catch (error) {
     console.error('[PendingPostLogin] stash error:', error);
